@@ -10,7 +10,10 @@ function getSpreadsheet() {
   return _ss;
 }
 
-function doGet() {
+function doGet(e) {
+  if (e.parameter && e.parameter.page === 'edit') {
+    return HtmlService.createHtmlOutputFromFile('editPersonnel');
+  }
   return HtmlService.createHtmlOutputFromFile('startingForm');
 }
 
@@ -99,6 +102,96 @@ function getTransportMeans(hint) {
 
 function getBudgets(hint) {
   return searchSheet('Budget', 'Budget', hint);
+}
+
+// ==========================================
+// PERSONNEL UPDATE LOGIC
+// ==========================================
+
+function getPersonnelRecord(employeeId) {
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName('Personnel');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idIndex = headers.indexOf('EmployeeId');
+
+  if (idIndex === -1) throw new Error('Column "EmployeeId" not found.');
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][idIndex]) === String(employeeId)) {
+      const record = {};
+      headers.forEach((header, index) => {
+        // Convert dates to string for easier frontend handling
+        let vals = data[i][index];
+        if (vals instanceof Date) {
+          vals = Utilities.formatDate(vals, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+        }
+        record[header] = vals;
+      });
+      return record;
+    }
+  }
+  return null;
+}
+
+function updatePersonnelRecord(formObject) {
+  try {
+    const employeeId = formObject.EmployeeId;
+    if (!employeeId) throw new Error("EmployeeId is missing.");
+
+    const ss = getSpreadsheet();
+    const sheet = ss.getSheetByName('Personnel');
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const idIndex = headers.indexOf('EmployeeId');
+
+    // Find row
+    let rowIndex = -1;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][idIndex]) === String(employeeId)) {
+        rowIndex = i + 1; // 1-based index for Sheet API
+        break;
+      }
+    }
+
+    if (rowIndex === -1) throw new Error("Personnel record not found.");
+
+    // Update columns
+    // We iterate over the received formObject keys and if they match a header, we update that cell.
+    // Explicit list of allowed columns to edit to allow safety
+    const editableColumns = [
+      "Nom", "Prénoms", "Civilité", "Fonction", "Date de naissance",
+      "Lieu de naissance", "Grade", "Indice", "Matricule",
+      "IFU", "Adresse complète", "Telephone", "Email"
+    ];
+
+    editableColumns.forEach(colName => {
+      if (formObject.hasOwnProperty(colName)) {
+        const colIndex = headers.indexOf(colName);
+        if (colIndex !== -1) {
+          const cell = sheet.getRange(rowIndex, colIndex + 1);
+
+          if (colName === "Date de naissance") {
+            // Handle date specifically to ensure clean formatting in Sheet
+            const dateVal = formObject[colName] ? new Date(formObject[colName]) : null;
+            if (dateVal) {
+              cell.setValue(dateVal).setNumberFormat('yyyy-MM-dd');
+            } else {
+              cell.clearContent();
+            }
+          } else {
+            // Default handling
+            cell.setValue(formObject[colName]);
+          }
+        }
+      }
+    });
+
+    return { success: true };
+  } catch (e) {
+    Logger.log("Update Error: " + e.message);
+    return { success: false, message: e.message };
+  }
 }
 
 
