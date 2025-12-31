@@ -132,6 +132,12 @@
           <div id="search-suggestions" class="suggestions-list"></div>
         </div>
         <div class="form-text">Commencez par saisir votre nom pour trouver votre fiche.</div>
+
+        <div class="mt-3 text-center" id="create-new-btn-container" style="display:none;">
+          <button class="btn btn-outline-secondary btn-sm" onclick="createNewMember()">
+            Je ne trouve pas mon dossier / Créer un nouveau
+          </button>
+        </div>
       </div>
 
       <!-- Edit Form (Hidden initially) -->
@@ -157,7 +163,7 @@
             <select class="form-select" name="Civilité">
               <option value="Monsieur">Monsieur</option>
               <option value="Madame">Madame</option>
-              <option value="Mademoiselle">Mademoiselle</option>
+              <!-- <option value="Mademoiselle">Mademoiselle</option> -->
             </select>
           </div>
           <div class="col-md-8">
@@ -268,6 +274,22 @@
       feedbackModal = new bootstrap.Modal(document.getElementById('feedbackModal'), { keyboard: false });
     });
 
+    function createNewMember() {
+      // Clear form
+      editForm.reset();
+      document.getElementById('EmployeeId').value = ''; // Ensure ID is empty for creation
+
+      // Show form
+      editForm.classList.remove('hidden-section');
+
+      // Hide suggestions if open
+      suggestionsDiv.innerHTML = '';
+      suggestionsDiv.classList.remove('active');
+
+      // Scroll to form
+      editForm.scrollIntoView({ behavior: 'smooth' });
+    }
+
     // Helper to show msg in modal
     function showFeedback(title, message, isSuccess) {
       const modalBody = document.querySelector('.modal-body');
@@ -293,6 +315,7 @@
       if (query.length < 2) {
         suggestionsDiv.innerHTML = '';
         suggestionsDiv.classList.remove('active');
+        document.getElementById('create-new-btn-container').style.display = 'none';
         return;
       }
       google.script.run.withSuccessHandler(showSuggestions).getEmployeeNames(query);
@@ -300,10 +323,15 @@
 
     function showSuggestions(results) {
       suggestionsDiv.innerHTML = '';
+      const createBtnContainer = document.getElementById('create-new-btn-container');
+
       if (!results || results.length === 0) {
         suggestionsDiv.classList.remove('active');
+        createBtnContainer.style.display = 'block'; // Show button if no results
         return;
       }
+
+      createBtnContainer.style.display = 'none'; // Hide button if results found
       suggestionsDiv.classList.add('active');
       results.forEach(item => {
         // item: [id, firstname, lastname, func]

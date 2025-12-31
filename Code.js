@@ -136,14 +136,65 @@ function getPersonnelRecord(employeeId) {
 
 function updatePersonnelRecord(formObject) {
   try {
-    const employeeId = formObject.EmployeeId;
-    if (!employeeId) throw new Error("EmployeeId is missing.");
+    let employeeId = formObject.EmployeeId;
+
+    // Explicit list of allowed columns to edit to allow safety
+    const editableColumns = [
+      "Nom", "Prénoms", "Civilité", "Fonction", "Date de naissance",
+      "Lieu de naissance", "Grade", "Indice", "Matricule",
+      "IFU", "Adresse complète", "Telephone", "Email"
+    ];
 
     const ss = getSpreadsheet();
     const sheet = ss.getSheetByName('Personnel');
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
     const idIndex = headers.indexOf('EmployeeId');
+
+    // === CREATE MODE ===
+    if (!employeeId) {
+      // 1. Generate new ID
+      // Filter out non-numeric IDs if any, find max
+      const ids = data.slice(1).map(r => parseInt(r[idIndex])).filter(val => !isNaN(val));
+      const nextId = ids.length > 0 ? Math.max(...ids) + 1 : 1000;
+      employeeId = nextId; // Set the new ID
+
+      // 2. Prepare new row (initialized with empty strings)
+      const newRow = new Array(headers.length).fill('');
+
+      // Set EmployeeId
+      newRow[idIndex] = nextId;
+
+      // Map form fields to new row columns
+      editableColumns.forEach(colName => {
+        if (formObject.hasOwnProperty(colName)) {
+          const colIndex = headers.indexOf(colName);
+          if (colIndex !== -1) {
+            const val = formObject[colName];
+            // Handle date format
+            if (colName === "Date de naissance" && val) {
+              newRow[colIndex] = new Date(val); // Will be set, but formatting needs range access roughly
+            } else {
+              newRow[colIndex] = val;
+            }
+          }
+        }
+      });
+
+      // Append row
+      sheet.appendRow(newRow);
+
+      // Post-Correction for Date Formatting on the last row
+      const lastRow = sheet.getLastRow();
+      const dobColIndex = headers.indexOf("Date de naissance");
+      if (dobColIndex !== -1 && formObject["Date de naissance"]) {
+        sheet.getRange(lastRow, dobColIndex + 1).setNumberFormat('yyyy-MM-dd');
+      }
+
+      return { success: true, message: "Nouveau dossier créé avec succès (ID: " + nextId + ")" };
+    }
+
+    // === UPDATE MODE ===
 
     // Find row
     let rowIndex = -1;
@@ -155,15 +206,6 @@ function updatePersonnelRecord(formObject) {
     }
 
     if (rowIndex === -1) throw new Error("Personnel record not found.");
-
-    // Update columns
-    // We iterate over the received formObject keys and if they match a header, we update that cell.
-    // Explicit list of allowed columns to edit to allow safety
-    const editableColumns = [
-      "Nom", "Prénoms", "Civilité", "Fonction", "Date de naissance",
-      "Lieu de naissance", "Grade", "Indice", "Matricule",
-      "IFU", "Adresse complète", "Telephone", "Email"
-    ];
 
     editableColumns.forEach(colName => {
       if (formObject.hasOwnProperty(colName)) {
