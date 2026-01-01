@@ -4,11 +4,19 @@ const personalTemplateId = '1ilY1k5UKbnihJ0khIfbFiS-tNcVwJkKT8oYL1ZKSXVA';
 const noteServiceMultipleTemplateId = '1kx1tsVfDj1dBcaSqgRKeJ3wqLHDvp6z6zWu70d912bc';
 const noteServiceSingleTemplateId = '1GI_co10kNRzpkJwB1M7Td_lokBc-j-ESQU2UdRpyjs4';
 const MISSING_DATA = '-----';
+const MISSION_GROUPS_SHEET_NAME = 'MissionGroups';
 
 // Helper to get Spreadsheet instance efficiently
 let _ss = null;
 function getSpreadsheet() {
-  if (!_ss) _ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  if (!_ss) {
+    _ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    // Ensure MissionGroups sheet exists
+    if (!_ss.getSheetByName(MISSION_GROUPS_SHEET_NAME)) {
+      const sheet = _ss.insertSheet(MISSION_GROUPS_SHEET_NAME);
+      sheet.appendRow(['MissionID', 'Vehicle', 'DriverID', 'PassengerIDs']);
+    }
+  }
   return _ss;
 }
 
@@ -257,19 +265,6 @@ function processMissionData(data) {
     const missionId = `ODM-${Date.now()}`;
     const headers = missionSheet.getRange(1, 1, 1, missionSheet.getLastColumn()).getValues()[0];
 
-    // Since original code had specific header mapping logic that might be fragile (it relied on data[headerName]),
-    // but the JSON keys are 'reference', 'odmType' etc. and headers might be 'Reference', 'Type' etc.
-    // The original code: `if(data[el])`. `el` is the header name.
-    // So if Header is 'Reference', data['Reference'] must exist.
-    // BUT the frontend sends `reference` (lowercase).
-    // Use keys map if needed, or rely on original behavior (which imply headers match keys exactly or keys were added to data object).
-    // To be safe and identical to functionality, I will trust the original logic's assumption or Map it if broken.
-    // Original: `var newRowData = [missionId] ... headers.forEach(el => ...)`
-    // Actually, original code pushed `missionId` first, then looped headers? Use careful reconstruction.
-    // Correction: It initialized `newRowData = [missionId]`.
-    // Then looped headers. CONSTANT WARNING: If `headers` includes 'MissionId' at index 0, it would double add.
-    // Let's stick to a robust approach:
-
     const rowToAppend = [];
     headers.forEach(header => {
       // Fix: Check for both MissionId and MissionID to be safe
@@ -290,6 +285,21 @@ function processMissionData(data) {
     });
 
     missionSheet.appendRow(rowToAppend);
+
+    // [New] Save Groups to 'MissionGroups' Sheet
+    if (data.groups && data.groups.length > 0) {
+        const groupsSheet = ss.getSheetByName(MISSION_GROUPS_SHEET_NAME);
+        // Headers: MissionID, Vehicle, DriverID, PassengerIDs
+        // Ensure we follow order or dynamically map if needed. For now simple append.
+        data.groups.forEach(group => {
+           groupsSheet.appendRow([
+               missionId,
+               group.vehicle || '',
+               group.driverId || '',
+               (group.passengers || []).join(',')
+           ]);
+        });
+    }
 
     // 4. Generate Document
     if (data.odmType === 'individual') {
@@ -344,112 +354,227 @@ function generateIndividualDocument(data, personnelMap) {
   };
 
   // Driver Info (Primary Driver)
-  if (data.drivers && data.drivers.length > 0) {
-    const driverRecord = personnelMap.get(String(data.drivers[0]));
-    replacements.driver = driverRecord ? `${driverRecord['Nom']} ${driverRecord['Prénoms']}` : MISSING_DATA;
-  } else {
-    replacements.driver = MISSING_DATA;
-  }
-
   // Determine Mission Object Vowel logic (Global for all members?)
-  // Original logic checked data.missionObject first char for 'conduire l'équipe...' prefix
-  // but applied it individually per member if they are 'Conducteur...'
   const vowels = ['a', 'e', 'é', 'è', 'ê', 'i', 'î', 'ï', 'o', 'ô', 'ö', 'u', 'ù', 'û', 'ü', 'y'];
-  let driverMissionObjectIntro = '';
+  let globalDriverMissionObjectIntro = '';
   if (data.missionObject && vowels.includes(data.missionObject.charAt(0).toLowerCase())) {
-    driverMissionObjectIntro = "conduire l'équipe chargée d'";
+    globalDriverMissionObjectIntro = "conduire l'équipe chargée d'";
   } else {
-    driverMissionObjectIntro = "conduire l'équipe chargée de ";
+    globalDriverMissionObjectIntro = "conduire l'équipe chargée de ";
   }
 
-  // 2. Process Members
+  // 2. Process Groups & Members
   const noteDeServiceData = [];
 
-  data.members.forEach(memberId => {
-    const member = personnelMap.get(String(memberId));
-    if (!member) return;
+  // Logic: Iterate groups.
+  // data.groups is expected. If missing (legacy usage?), use data.members as specific group?
+  // Let's normalize: if no groups but members exist, treat as 1 group.
+  let groupsToProcess = data.groups || [];
+  if (groupsToProcess.length === 0 && data.members && data.members.length > 0) {
+      // Fallback for legacy calls or simple mode if logic still routes here
+      groupsToProcess.push({
+          vehicle: (data.transportMeans && data.transportMeans[0]) || '',
+          driverId: (data.drivers && data.drivers[0]) || '',
+          passengers: data.members
+      });
+  }
 
-    // Collect data for Note De Service
-    noteDeServiceData.push(`- ${member['Civilité']} ${member['Nom']} ${member['Prénoms']}, ${member['Fonction']}`);
+  groupsToProcess.forEach(group => {
+      // Resolve Driver for this group
+      let groupDriverName = MISSING_DATA;
+      if (group.driverId) {
+          const r = personnelMap.get(String(group.driverId));
+          if (r) groupDriverName = `${r['Nom']} ${r['Prénoms']}`;
+      } else if (group.driverName) {
+           groupDriverName = group.driverName;
+      }
 
-    // Build specific member replacements
-    const memberReplacements = {
-      ...replacements,
-      nom: member['Nom'],
-      prenom: member['Prénoms'],
-      fullName: `${member['Nom']} ${member['Prénoms']}`,
-      civilite: member['Civilité'],
-      fonction: member['Fonction'] || MISSING_DATA,
-      grade: member['Grade'] || MISSING_DATA,
-      indice: member['Indice'] || MISSING_DATA,
-      matricule: member['Matricule'] || MISSING_DATA,
-      ifu: member['IFU'] || MISSING_DATA,
-      adresse: (member['Adresse complète'] || MISSING_DATA).replace(/;\s*$/, ''),
-      lieuNaissance: member['Lieu de naissance'] || MISSING_DATA,
-      dateNaissance: member['Date de naissance'] ? new Date(member['Date de naissance']).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : MISSING_DATA,
-      charge: member['Civilité'] === 'Monsieur' ? 'chargé' : 'chargée'
-    };
+      // Iterate passengers in this group
+      const passengers = group.passengers || [];
+      passengers.forEach(memberId => {
+        const member = personnelMap.get(String(memberId));
+        if (!member) return;
 
-    // Phone formatting
-    let phone = member['Telephone'] ? String(member['Telephone']) : '';
-    if (phone.includes('+229')) phone = phone.replace('+229', '');
-    memberReplacements.phone = phone.replace(/\s/g, '').trim() || MISSING_DATA;
+        // Collect data for Note De Service (Global list)
+        noteDeServiceData.push(`- ${member['Civilité']} ${member['Nom']} ${member['Prénoms']}, ${member['Fonction']}`);
 
-    // Mission Object Logic
-    if (member['Fonction'] && member['Fonction'].toLowerCase() === 'conducteur de véhicules administratifs') {
-       memberReplacements.missionObject = `${driverMissionObjectIntro}${data.missionObject}`;
-    } else {
-       memberReplacements.missionObject = data.missionObject;
-    }
+        // Build specific member replacements
+        const memberReplacements = {
+          ...replacements,
+          // Overwrite transport/driver with GROUP specific info
+          transportMeans: group.vehicle || replacements.transportMeans,
+          driver: groupDriverName,
+          
+          nom: member['Nom'],
+          prenom: member['Prénoms'],
+          fullName: `${member['Nom']} ${member['Prénoms']}`,
+          civilite: member['Civilité'],
+          fonction: member['Fonction'] || MISSING_DATA,
+          grade: member['Grade'] || MISSING_DATA,
+          indice: member['Indice'] || MISSING_DATA,
+          matricule: member['Matricule'] || MISSING_DATA,
+          ifu: member['IFU'] || MISSING_DATA,
+          adresse: (member['Adresse complète'] || MISSING_DATA).replace(/;\s*$/, ''),
+          lieuNaissance: member['Lieu de naissance'] || MISSING_DATA,
+          dateNaissance: member['Date de naissance'] ? new Date(member['Date de naissance']).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : MISSING_DATA,
+          charge: member['Civilité'] === 'Monsieur' ? 'chargé' : 'chargée'
+        };
 
-    // Creating member list for Note de Service
-    // The line break is added to each member in the array to ensure we have each element on a new line
-    // The dash previously added in the loop (`- ${member['Civilité']} ${member['Nom']} ${member['Prénoms']}, ${member['Fonction']}`)
-    // is put to simulate bullet list in the final document
-    // as bullet list is difficult to create programmatically in Google Docs
-    memberReplacements.membersList = noteDeServiceData.join('\n');
+        // Phone formatting
+        let phone = member['Telephone'] ? String(member['Telephone']) : '';
+        if (phone.includes('+229')) phone = phone.replace('+229', '');
+        memberReplacements.phone = phone.replace(/\s/g, '').trim() || MISSING_DATA;
 
-    // 3. Create Temp Doc for this member
-    const tempDocFile = DriveApp.getFileById(personalTemplateId).makeCopy();
-    const tempDoc = DocumentApp.openById(tempDocFile.getId());
-    const tempBody = tempDoc.getBody();
-
-    // Replace Text
-    for (const [key, val] of Object.entries(memberReplacements)) {
-      tempBody.replaceText(`{{${key}}}`, String(val));
-    }
-    tempDoc.saveAndClose();
-
-    // 4. Append Temp Doc content to Final Doc
-    const tempDocFilled = DocumentApp.openById(tempDocFile.getId());
-    const tempDocFilledBody = tempDocFilled.getBody();
-    const totalElements = tempDocFilledBody.getNumChildren();
-
-    for (let i = 0; i < totalElements; i++) {
-        const element = tempDocFilledBody.getChild(i).copy();
-        appendElement(finalODMDocBody, element);
-    }
-
-    // Formatting fix ported from backup
-    const paragraphs = finalODMDocBody.getParagraphs();
-    // We only need to format the newly added paragraphs? No, iterating all is safer/easier as per original
-    paragraphs.forEach(function (paragraph) {
-        const text = paragraph.getText().trim();
-        if (text.toUpperCase() === 'ORDRE DE MISSION') {
-            paragraph.setFontFamily('Calibri')
-                .setFontSize(24)
-                .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+        // Mission Object Logic
+        if (member['Fonction'] && member['Fonction'].toLowerCase() === 'conducteur de véhicules administratifs') {
+           memberReplacements.missionObject = `${globalDriverMissionObjectIntro}${data.missionObject}`;
         } else {
-            // Only apply to defaults? Careful not to overwrite if template had multiple fonts.
-            // Original code applied this indiscriminately.
-            paragraph.setFontFamily('Calibri')
-                .setFontSize(13)
-                .setSpacingAfter(5);
+           memberReplacements.missionObject = data.missionObject;
         }
-    });
 
-    finalODMDocBody.appendPageBreak();
-    tempDocFile.setTrashed(true);
+        // Creating member list for Note de Service
+        // This is tricky: Note de Service needs ALL members from ALL groups.
+        // But we are inside the loop.
+        // Wait, the logic for "Note de Service" depends on `noteDeServiceData` which is being built HERE.
+        // IF we join it here, it will only contain members processed SO FAR.
+        // CORRECT LOGIC: We must process ALL members first to build `noteDeServiceData`, THEN generate documents?
+        // OR pass a reference?
+        // In previous working code, we iterated members, updated `noteDeServiceData`, then joined it.
+        // BUT `noteDeServiceData` only had *previous* + *current* member.
+        // Is that desired? No, usually Note de Service lists EVERYONE.
+        // If the original code worked by accumulating, it means the LAST page had everyone?
+        // Or did every page list everyone processed *so far*?
+        // Actually, for individual ODM, `membersList` placeholder might strictly refer to the Note De Service page attached at the end.
+        // BUT `generateIndividualDocument` makes a TEMP doc for *each* member.
+        // Valid question: Does the individual ODM page (page 1) show the list of everyone?
+        // Usually not. It shows "Order de Mission" for X.
+        // The list is on the "Note de Service".
+        // SO: We can defer the Note De Service generation to the end (which we do).
+        // BUT: Does `memberReplacements` use `membersList`?
+        // Lines 413-418 in original: `memberReplacements.membersList = noteDeServiceData.join('\n');`
+        // This implies the individual ODM template *might* use it.
+        // If it does, using a partial list is buggy or weird.
+        // Ideally, we should pre-calculate the full list.
+        
+        // REFACTOR: Build full member list first.
+        // Since we are iterating anyway, let's keep the flow but maybe pre-calculate `noteDeServiceData` if possible?
+        // Or just accept the accumulation behavior (it works for the final Note de Service, but for individual pages if they show it, it's partial).
+        // Given the prompt "we find out that some missions have so many participants...", the individual page likely doesn't list everyone.
+        // It's the Note de Service that lists everyone.
+        // I will stick to the accumulation logic but ideally, I should fix it. 
+        // Let's stick to accumulation to minimize regression risk on behavior I haven't fully inspected in the template.
+        // memberReplacements.membersList = noteDeServiceData.join('\n');
+        
+        // UPDATE: I will NOT change the logic of accumulation *inside* the loop for now,
+        // but I will ensure `noteDeServiceData` aggregates across GROUPS.
+      }); 
+  });
+  
+  // NOW iterate again to generate docs?
+  // No, we need to generate docs *as* we iterate or after.
+  // If we want `membersList` to be complete on all pages (if used), we must pre-process.
+  // Let's do 2 passes. Pass 1: Collect all data. Pass 2: Generate.
+  
+  // Pass 1: Build comprehensive list
+  const allMembersForNote = [];
+  groupsToProcess.forEach(group => {
+       const groupMembers = [...(group.passengers || [])];
+       // Add driver if present and distinct
+       if (group.driverId && !groupMembers.includes(group.driverId)) {
+           groupMembers.unshift(group.driverId);
+       }
+       
+       groupMembers.forEach(pId => {
+           const m = personnelMap.get(String(pId));
+           if(m) allMembersForNote.push(`- ${m['Civilité']} ${m['Nom']} ${m['Prénoms']}, ${m['Fonction']}`);
+       });
+  });
+  const fullMembersListString = allMembersForNote.join('\n');
+
+  // Pass 2: Generate
+  groupsToProcess.forEach(group => {
+      // Group Driver
+      let groupDriverName = MISSING_DATA;
+      if (group.driverId) {
+          const r = personnelMap.get(String(group.driverId));
+          if (r) groupDriverName = `${r['Nom']} ${r['Prénoms']}`;
+      } else if (group.driverName) {
+           groupDriverName = group.driverName;
+      }
+      
+      const passengers = group.passengers || [];
+      // Combine driver and passengers for ODM generation
+      // We want to generate an ODM for the driver too.
+      const membersToGenerate = [...passengers];
+      if (group.driverId && !membersToGenerate.includes(group.driverId)) {
+          membersToGenerate.unshift(group.driverId);
+      }
+
+      membersToGenerate.forEach(memberId => {
+        const member = personnelMap.get(String(memberId));
+        if (!member) return;
+        
+        const memberReplacements = {
+          ...replacements,
+          transportMeans: group.vehicle || replacements.transportMeans,
+          driver: groupDriverName,
+          nom: member['Nom'],
+          prenom: member['Prénoms'],
+          fullName: `${member['Nom']} ${member['Prénoms']}`,
+          civilite: member['Civilité'],
+          fonction: member['Fonction'] || MISSING_DATA,
+          grade: member['Grade'] || MISSING_DATA,
+          indice: member['Indice'] || MISSING_DATA,
+          matricule: member['Matricule'] || MISSING_DATA,
+          ifu: member['IFU'] || MISSING_DATA,
+          adresse: (member['Adresse complète'] || MISSING_DATA).replace(/;\s*$/, ''),
+          lieuNaissance: member['Lieu de naissance'] || MISSING_DATA,
+          dateNaissance: member['Date de naissance'] ? new Date(member['Date de naissance']).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : MISSING_DATA,
+          charge: member['Civilité'] === 'Monsieur' ? 'chargé' : 'chargée',
+          membersList: fullMembersListString, // Use full list
+          phone: (member['Telephone'] ? String(member['Telephone']).replace('+229', '').replace(/\s/g, '').trim() : MISSING_DATA)
+        };
+        
+        if ((member['Fonction'] && member['Fonction'].toLowerCase() === 'conducteur de véhicules administratifs') || String(memberId) === String(group.driverId)) {
+           memberReplacements.missionObject = `${globalDriverMissionObjectIntro}${data.missionObject}`;
+        } else {
+           memberReplacements.missionObject = data.missionObject;
+        }
+
+        // Generate Temp Doc
+        const tempDocFile = DriveApp.getFileById(personalTemplateId).makeCopy();
+        const tempDoc = DocumentApp.openById(tempDocFile.getId());
+        const tempBody = tempDoc.getBody();
+
+        for (const [key, val] of Object.entries(memberReplacements)) {
+          tempBody.replaceText(`{{${key}}}`, String(val));
+        }
+        tempDoc.saveAndClose();
+
+        // Append to Final
+        const tempDocFilled = DocumentApp.openById(tempDocFile.getId());
+        const tempDocFilledBody = tempDocFilled.getBody();
+        const totalElements = tempDocFilledBody.getNumChildren();
+
+        for (let i = 0; i < totalElements; i++) {
+             const element = tempDocFilledBody.getChild(i).copy();
+             appendElement(finalODMDocBody, element);
+        }
+        
+        // Formatting
+        const paragraphs = finalODMDocBody.getParagraphs();
+        paragraphs.forEach(function (paragraph) {
+            const text = paragraph.getText().trim();
+            if (text.toUpperCase() === 'ORDRE DE MISSION') {
+                paragraph.setFontFamily('Calibri').setFontSize(24).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+            } else {
+                paragraph.setFontFamily('Calibri').setFontSize(13).setSpacingAfter(5);
+            }
+        });
+
+        finalODMDocBody.appendPageBreak();
+        tempDocFile.setTrashed(true);
+      });
   });
 
   // 5. Generate Note de Service
@@ -459,10 +584,10 @@ function generateIndividualDocument(data, personnelMap) {
   const npsData = {
       ...replacements,
       missionObject: data.missionObject,
-      membersList: noteDeServiceData.join('\n')
+      membersList: fullMembersListString
   };
 
-  const noteServiceDocId = generateNoteDeService(npsData, noteDeServiceData);
+  const noteServiceDocId = generateNoteDeService(npsData, allMembersForNote);
   const tempNoteServiceDoc = DocumentApp.openById(noteServiceDocId);
   const tempNoteServiceDocBody = tempNoteServiceDoc.getBody();
   const totalElements = tempNoteServiceDocBody.getNumChildren();
