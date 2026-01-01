@@ -257,27 +257,6 @@ function processMissionData(data) {
     const missionId = `ODM-${Date.now()}`;
     const headers = missionSheet.getRange(1, 1, 1, missionSheet.getLastColumn()).getValues()[0];
 
-    const newRowData = headers.map(header => {
-      if (header === 'MissionId') return missionId;
-      if (header === 'CreatedAt') {
-        const now = new Date();
-        return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')} ${now.getHours()}:${now.getMinutes()}`;
-      }
-
-      // Map data fields to headers
-      // Note: data keys usually match headers but lowerCamelCase vs Header Name needs mapping if strictly required.
-      // In the original code, it checked `if(data[el])`. Let's assume headers in sheet match keys in data object somewhat or data object keys are used directly?
-      // The original code used: if(data[el]).
-      // This implies the Sheet Headers MUST match the keys in the `data` object (e.g. 'reference', 'odmType').
-      // Let's preserve that logic.
-
-      const value = data[header]; // This relies on Header Name == JSON Key Name
-      if (value) {
-        return Array.isArray(value) ? value.join(' - ') : value;
-      }
-      return '';
-    });
-
     // Since original code had specific header mapping logic that might be fragile (it relied on data[headerName]),
     // but the JSON keys are 'reference', 'odmType' etc. and headers might be 'Reference', 'Type' etc.
     // The original code: `if(data[el])`. `el` is the header name.
@@ -293,7 +272,8 @@ function processMissionData(data) {
 
     const rowToAppend = [];
     headers.forEach(header => {
-      if (header === 'MissionId') {
+      // Fix: Check for both MissionId and MissionID to be safe
+      if (header === 'MissionId' || header === 'MissionID') {
         rowToAppend.push(missionId);
       } else if (header === 'CreatedAt') {
         const now = new Date(); // Simple formatting
