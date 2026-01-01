@@ -116,6 +116,37 @@
     .hidden-section {
       display: none;
     }
+
+    /* Mobile Responsiveness */
+    @media (max-width: 768px) {
+      body {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+        font-size: 16px;
+        /* Ensure readability and prevent iOS zoom */
+      }
+
+      .main-card {
+        padding: 1.25rem;
+        border-radius: 0.5rem;
+      }
+
+      h1.form-title {
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+      }
+
+      .form-control,
+      .form-select {
+        font-size: 16px;
+        /* Prevent zoom */
+      }
+
+      .btn-lg {
+        width: 100%;
+        padding: 0.75rem 1rem;
+      }
+    }
   </style>
 </head>
 
@@ -157,7 +188,6 @@
             <select class="form-select" name="Civilité">
               <option value="Monsieur">Monsieur</option>
               <option value="Madame">Madame</option>
-              <option value="Mademoiselle">Mademoiselle</option>
             </select>
           </div>
           <div class="col-md-8">
@@ -209,10 +239,10 @@
         <div class="row mb-4">
           <div class="col-md-6">
             <label class="form-label">Téléphone</label>
-            <input type="tel" class="form-control" name="Telephone" placeholder="Ex: 97000000">
+            <input type="tel" class="form-control" name="Telephone" placeholder="Ex: +229 0197000000">
           </div>
           <div class="col-md-6">
-            <label class="form-label">Email (Facultatif)</label>
+            <label class="form-label">Email</label>
             <input type="email" class="form-control" name="Email">
           </div>
         </div>

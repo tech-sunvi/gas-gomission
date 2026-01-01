@@ -1,6 +1,8 @@
 const SPREADSHEET_ID = '1MTNQLZMBJCyirap6tKG9dbkHEFiRMl3drtJ6LO3bEIk';
 const destinationFolderId = '1Z_JzwMsJ90gguIXmTwAbSLJOW1pc5hgB';
 const personalTemplateId = '1ilY1k5UKbnihJ0khIfbFiS-tNcVwJkKT8oYL1ZKSXVA';
+const noteServiceMultipleTemplateId = '1kx1tsVfDj1dBcaSqgRKeJ3wqLHDvp6z6zWu70d912bc';
+const noteServiceSingleTemplateId = '1GI_co10kNRzpkJwB1M7Td_lokBc-j-ESQU2UdRpyjs4';
 const MISSING_DATA = '-----';
 
 // Helper to get Spreadsheet instance efficiently
@@ -12,9 +14,11 @@ function getSpreadsheet() {
 
 function doGet(e) {
   if (e.parameter && e.parameter.page === 'edit') {
-    return HtmlService.createHtmlOutputFromFile('editPersonnel');
+    return HtmlService.createHtmlOutputFromFile('editPersonnel')
+        .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
-  return HtmlService.createHtmlOutputFromFile('startingForm');
+  return HtmlService.createHtmlOutputFromFile('startingForm')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 // ==========================================
@@ -327,13 +331,7 @@ function processMissionData(data) {
  * @param {Map} personnelMap - Cached personnel data (ID -> Record)
  */
 function generateIndividualDocument(data, personnelMap) {
-  const docName = data.docName ? `Ordre de Mission - ${data.docName}` : `Ordre de Mission - ${data.reference} - ${new Date().toLocaleDateString()}`;
-
-  const templateFile = DriveApp.getFileById(personalTemplateId);
-  const destinationFolder = DriveApp.getFolderById(destinationFolderId);
-  const newDocFile = templateFile.makeCopy(docName, destinationFolder);
-  const doc = DocumentApp.openById(newDocFile.getId());
-  const body = doc.getBody();
+  const docName = data.docName ? `Ordre de Mission - ${new Date().toLocaleDateString()} ${data.docName}` : `Ordre de Mission - ${data.reference} - ${new Date().toLocaleDateString()}`;
 
   // Helper for dates
   const formatDate = (dateStr) => {
@@ -343,6 +341,16 @@ function generateIndividualDocument(data, personnelMap) {
     });
   };
 
+  // 1. Create Final Empty Document
+  const destinationFolder = DriveApp.getFolderById(destinationFolderId);
+  // Create doc in root first (default behavior of create), then move? Or just create.
+  // DocumentApp.create() creates in root. We need to move it.
+  const finalODMDoc = DocumentApp.create(docName);
+  const finalODMDocFile = DriveApp.getFileById(finalODMDoc.getId());
+  finalODMDocFile.moveTo(destinationFolder);
+  
+  const finalODMDocBody = finalODMDoc.getBody();
+
   // Base ODM Data
   const replacements = {
     reference: data.reference || MISSING_DATA,
@@ -350,7 +358,9 @@ function generateIndividualDocument(data, personnelMap) {
     dateDepart: formatDate(data.departureDate),
     dateRetour: formatDate(data.returnDate),
     transportMeans: (data.transportMeans || []).join(', ') || MISSING_DATA,
-    budgets: (data.budgets || []).join(', ') || MISSING_DATA
+    budgets: (data.budgets || []).join(', ') || 'Budget SRTB',
+    // Add missing fields from original logic
+    datesString: data.departureDate === data.returnDate ? `le ${formatDate(data.departureDate)}` : `du ${formatDate(data.departureDate)} au ${formatDate(data.returnDate)}`
   };
 
   // Driver Info (Primary Driver)
@@ -361,27 +371,30 @@ function generateIndividualDocument(data, personnelMap) {
     replacements.driver = MISSING_DATA;
   }
 
-  // Process Each Member
-  // Note: If template is meant for one person (Individual ODM), usually we generate ONE doc per person? 
-  // OR one doc containing all? The original code loops `data.members.forEach` and does `body.replaceText`. 
-  // If there are multiple members in "Individual" mode (which sounds contradictory but possible), 
-  // replacing '{{nom}}' once will replace it for ALL occurrences. 
-  // The original code seems to assume 1 member OR it overwrites placeholders (which only works effectively for 1 member).
-  // If 'Individual' ODM implies 1 form per person, logic might be needed to duplicate the template/pages.
-  // HOWEVER, based on exact refactoring: I will preserve original behavior: Loop members and replace. 
-  // (Warning: If multiple members, later ones might find no placeholders if they were replaced by the first one).
+  // Determine Mission Object Vowel logic (Global for all members?)
+  // Original logic checked data.missionObject first char for 'conduire l'équipe...' prefix
+  // but applied it individually per member if they are 'Conducteur...'
+  const vowels = ['a', 'e', 'é', 'è', 'ê', 'i', 'î', 'ï', 'o', 'ô', 'ö', 'u', 'ù', 'û', 'ü', 'y'];
+  let driverMissionObjectIntro = '';
+  if (data.missionObject && vowels.includes(data.missionObject.charAt(0).toLowerCase())) {
+    driverMissionObjectIntro = "conduire l'équipe chargée d'";
+  } else {
+    driverMissionObjectIntro = "conduire l'équipe chargée de ";
+  }
 
-  // Assuming typically 1 member for Individual ODM or the template is designed to handle list?
-  // Original code: `data.members.forEach(memberId => { ... body.replaceText ... })`
-  // I will strictly follow this logic but use the Map.
+  // 2. Process Members
+  const noteDeServiceData = [];
 
   data.members.forEach(memberId => {
     const member = personnelMap.get(String(memberId));
     if (!member) return;
 
+    // Collect data for Note De Service
+    noteDeServiceData.push(`- ${member['Civilité']} ${member['Nom']} ${member['Prénoms']}, ${member['Fonction']}`);
+
     // Build specific member replacements
     const memberReplacements = {
-      ...replacements, // Inherit base replacements
+      ...replacements,
       nom: member['Nom'],
       prenom: member['Prénoms'],
       fullName: `${member['Nom']} ${member['Prénoms']}`,
@@ -391,9 +404,10 @@ function generateIndividualDocument(data, personnelMap) {
       indice: member['Indice'] || MISSING_DATA,
       matricule: member['Matricule'] || MISSING_DATA,
       ifu: member['IFU'] || MISSING_DATA,
-      adresse: member['Adresse complète'] || MISSING_DATA,
+      adresse: (member['Adresse complète'] || MISSING_DATA).replace(/;\s*$/, ''),
       lieuNaissance: member['Lieu de naissance'] || MISSING_DATA,
       dateNaissance: member['Date de naissance'] ? new Date(member['Date de naissance']).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : MISSING_DATA,
+      charge: member['Civilité'] === 'Monsieur' ? 'chargé' : 'chargée'
     };
 
     // Phone formatting
@@ -401,19 +415,126 @@ function generateIndividualDocument(data, personnelMap) {
     if (phone.includes('+229')) phone = phone.replace('+229', '');
     memberReplacements.phone = phone.replace(/\s/g, '').trim() || MISSING_DATA;
 
-    // Special Mission Object logic
-    memberReplacements.missionObject = (member['Fonction'] === 'Conducteur de véhicules administratifs')
-      ? `conduire l'équipe chargée de ${data.missionObject}`
-      : data.missionObject;
-
-    // Apply replacements
-    for (const [key, val] of Object.entries(memberReplacements)) {
-      body.replaceText(`{{${key}}}`, String(val));
+    // Mission Object Logic
+    if (member['Fonction'] && member['Fonction'].toLowerCase() === 'conducteur de véhicules administratifs') {
+       memberReplacements.missionObject = `${driverMissionObjectIntro}${data.missionObject}`;
+    } else {
+       memberReplacements.missionObject = data.missionObject;
     }
+
+    // Creating member list for Note de Service
+    // The line break is added to each member in the array to ensure we have each element on a new line
+    // The dash previously added in the loop (`- ${member['Civilité']} ${member['Nom']} ${member['Prénoms']}, ${member['Fonction']}`)
+    // is put to simulate bullet list in the final document
+    // as bullet list is difficult to create programmatically in Google Docs
+    memberReplacements.membersList = noteDeServiceData.join('\n');
+
+    // 3. Create Temp Doc for this member
+    const tempDocFile = DriveApp.getFileById(personalTemplateId).makeCopy();
+    const tempDoc = DocumentApp.openById(tempDocFile.getId());
+    const tempBody = tempDoc.getBody();
+
+    // Replace Text
+    for (const [key, val] of Object.entries(memberReplacements)) {
+      tempBody.replaceText(`{{${key}}}`, String(val));
+    }
+    tempDoc.saveAndClose();
+
+    // 4. Append Temp Doc content to Final Doc
+    const tempDocFilled = DocumentApp.openById(tempDocFile.getId());
+    const tempDocFilledBody = tempDocFilled.getBody();
+    const totalElements = tempDocFilledBody.getNumChildren();
+
+    for (let i = 0; i < totalElements; i++) {
+        const element = tempDocFilledBody.getChild(i).copy();
+        appendElement(finalODMDocBody, element);
+    }
+
+    // Formatting fix ported from backup
+    const paragraphs = finalODMDocBody.getParagraphs();
+    // We only need to format the newly added paragraphs? No, iterating all is safer/easier as per original
+    paragraphs.forEach(function (paragraph) {
+        const text = paragraph.getText().trim();
+        if (text.toUpperCase() === 'ORDRE DE MISSION') {
+            paragraph.setFontFamily('Calibri')
+                .setFontSize(24)
+                .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+        } else {
+            // Only apply to defaults? Careful not to overwrite if template had multiple fonts.
+            // Original code applied this indiscriminately.
+            paragraph.setFontFamily('Calibri')
+                .setFontSize(13)
+                .setSpacingAfter(5);
+        }
+    });
+
+    finalODMDocBody.appendPageBreak();
+    tempDocFile.setTrashed(true);
   });
 
-  doc.saveAndClose();
-  return newDocFile.getUrl();
+  // 5. Generate Note de Service
+  // Prepare data for note de service
+  // Original logic: Remove missionObject to prevent driverIntro logic carrying over?
+  // And re-add original mission object.
+  const npsData = {
+      ...replacements,
+      missionObject: data.missionObject,
+      membersList: noteDeServiceData.join('\n')
+  };
+
+  const noteServiceDocId = generateNoteDeService(npsData, noteDeServiceData);
+  const tempNoteServiceDoc = DocumentApp.openById(noteServiceDocId);
+  const tempNoteServiceDocBody = tempNoteServiceDoc.getBody();
+  const totalElements = tempNoteServiceDocBody.getNumChildren();
+
+  for (let i = 0; i < totalElements; i++) {
+      const element = tempNoteServiceDocBody.getChild(i).copy();
+      appendElement(finalODMDocBody, element);
+  }
+
+  DriveApp.getFileById(noteServiceDocId).setTrashed(true);
+  finalODMDoc.saveAndClose();
+  
+  return finalODMDocFile.getUrl();
+}
+
+/**
+ * Helper to append different element types to a document body.
+ */
+function appendElement(docBody, element) {
+  const type = element.getType();
+  switch (type) {
+    case DocumentApp.ElementType.PARAGRAPH:
+      docBody.appendParagraph(element); // .copy() not needed if element is already a copy? logic says element.copy() in loop.
+      break;
+    case DocumentApp.ElementType.TABLE:
+      docBody.appendTable(element);
+      break;
+    case DocumentApp.ElementType.LIST_ITEM:
+      docBody.appendListItem(element);
+      break;
+    case DocumentApp.ElementType.INLINE_IMAGE:
+      docBody.appendImage(element);
+      break;
+    default:
+      Logger.log('Unsupported element type: ' + type);
+  }
+}
+
+/**
+ * Generates the Note de Service temp doc.
+ */
+function generateNoteDeService(odmData, membersDataArray) {
+    const noteServiceTemplateId = membersDataArray.length > 1 ? noteServiceMultipleTemplateId : noteServiceSingleTemplateId;
+    const tempFile = DriveApp.getFileById(noteServiceTemplateId).makeCopy();
+    const tempDoc = DocumentApp.openById(tempFile.getId());
+    const body = tempDoc.getBody();
+
+    for (const [key, val] of Object.entries(odmData)) {
+        body.replaceText(`{{${key}}}`, String(val));
+    }
+    tempDoc.saveAndClose();
+    return tempFile.getId();
 }
 
 // Dummy data just for testing
