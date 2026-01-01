@@ -21,12 +21,28 @@ function getSpreadsheet() {
 }
 
 function doGet(e) {
-  if (e.parameter && e.parameter.page === 'edit') {
-    return HtmlService.createHtmlOutputFromFile('editPersonnel')
-        .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  let template;
+  let page = e.parameter.page;
+  
+  if (page === 'edit') {
+    template = HtmlService.createTemplateFromFile('editPersonnel');
+  } else if (page === 'add_employee') {
+    template = HtmlService.createTemplateFromFile('form_employee');
+  } else if (page === 'add_vehicle') {
+    template = HtmlService.createTemplateFromFile('form_vehicle');
+  } else if (page === 'add_destination') {
+    template = HtmlService.createTemplateFromFile('form_destination');
+  } else {
+    // Default to 'new_mission' or root
+    template = HtmlService.createTemplateFromFile('startingForm');
   }
-  return HtmlService.createHtmlOutputFromFile('startingForm')
+  
+  return template.evaluate()
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+function include(filename) {
+  return HtmlService.createTemplateFromFile(filename).evaluate().getContent();
 }
 
 // ==========================================
@@ -714,3 +730,59 @@ function testSubmission() {
   processMissionData(data);
 }
 
+
+// ==========================================
+// RESOURCE MANAGEMENT FUNCTIONS
+// ==========================================
+
+function addEmployee(data) {
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName('Personnel');
+  // Generate EmployeeId: Max existing ID + 1
+  // ID is in column 1. Get values, flatten, convert to number, find max.
+  // Warning: getRange(2, 1, lastRow-1) might fail if lastRow < 2 (empty sheet).
+  let newId = 1;
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    const existingIds = sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat().map(Number).filter(n => !isNaN(n));
+    if (existingIds.length > 0) {
+      newId = Math.max(...existingIds) + 1;
+    }
+  }
+
+  // PRODUCT_SPEC Order:
+  // EmployeeId, Nom, Prénoms, Civilité, Fonction, Date de naissance, Lieu de naissance, Grade, Indice, Matricule, IFU, Adresse complète, Telephone, Sexe, Email
+  const row = [
+    newId,
+    data.nom,
+    data.prenoms,
+    data.civilite,
+    data.fonction,
+    data.dateNaissance ? new Date(data.dateNaissance) : '', // Store as date object or string? Sheet prefers Date object for date columns usually
+    data.lieuNaissance,
+    data.grade,
+    data.indice,
+    data.matricule,
+    data.ifu,
+    data.adresse,
+    data.telephone,
+    data.sexe,
+    data.email
+  ];
+  sheet.appendRow(row);
+  return newId;
+}
+
+function addVehicle(vehicleName) {
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName('Transport');
+  sheet.appendRow([vehicleName]);
+  return true;
+}
+
+function addDestination(destinationName) {
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName('Destination');
+  sheet.appendRow([destinationName]);
+  return true;
+}

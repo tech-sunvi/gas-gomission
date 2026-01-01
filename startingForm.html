@@ -36,6 +36,9 @@
       font-family: 'Inter', sans-serif;
       background-color: var(--bg-color);
       color: var(--text-color);
+    }
+
+    .container {
       padding-top: 2rem;
       padding-bottom: 2rem;
     }
@@ -269,6 +272,7 @@
 </head>
 
 <body>
+  <?!= include('header'); ?>
   <div class="container">
     <div class="main-card">
       <h1 class="form-title">Demande d'ordre de mission</h1>
@@ -507,7 +511,6 @@
       }
     }
 
-
     // --- Dynamic Group Manager ---
 
     const groupsContainer = document.getElementById('groups-container');
@@ -519,32 +522,32 @@
     function createGroupHTML(id) {
       return `
         <div class="group-card" id="${id}">
-            <div class="group-header">
-                <span class="group-title">Groupe</span>
-                <button type="button" class="btn-close" aria-label="Close" onclick="removeGroup('${id}')"></button>
-            </div>
-            
-            <div class="mb-3 suggestions-container">
-                <label class="form-label">Véhicule</label>
-                <input type="text" id="${id}-vehicle" class="form-control" placeholder="Entrez le véhicule...">
-                <div id="${id}-vehicle-suggestions" class="suggestions-list"></div>
-            </div>
+          <div class="group-header">
+            <span class="group-title">Groupe</span>
+            <button type="button" class="btn-close" aria-label="Close" onclick="removeGroup('${id}')"></button>
+          </div>
+          
+          <div class="mb-3 suggestions-container">
+            <label class="form-label">Véhicule</label>
+            <input type="text" id="${id}-vehicle" class="form-control" placeholder="Entrez le véhicule...">
+            <div id="${id}-vehicle-suggestions" class="suggestions-list"></div>
+          </div>
 
-            <div class="mb-3 suggestions-container">
-                <label class="form-label">Conducteur</label>
-                <input type="text" id="${id}-driver" class="form-control" placeholder="Rechercher le conducteur...">
-                <input type="hidden" id="${id}-driver-id" class="driver-id-hidden"> 
-                <div id="${id}-driver-suggestions" class="suggestions-list"></div>
-            </div>
+          <div class="mb-3 suggestions-container">
+            <label class="form-label">Conducteur</label>
+            <input type="text" id="${id}-driver" class="form-control" placeholder="Rechercher le conducteur...">
+            <input type="hidden" id="${id}-driver-id" class="driver-id-hidden"> 
+            <div id="${id}-driver-suggestions" class="suggestions-list"></div>
+          </div>
 
-            <div class="mb-3 suggestions-container">
-                <label class="form-label">Passagers</label>
-                <input type="text" id="${id}-members" class="form-control" placeholder="Ajouter des passagers...">
-                <div id="${id}-members-suggestions" class="suggestions-list"></div>
-                <div id="${id}-selected-members"></div>
-            </div>
+          <div class="mb-3 suggestions-container">
+            <label class="form-label">Passagers</label>
+            <input type="text" id="${id}-members" class="form-control" placeholder="Ajouter des passagers...">
+            <div id="${id}-members-suggestions" class="suggestions-list"></div>
+            <div id="${id}-selected-members"></div>
+          </div>
         </div>
-        `;
+      `;
     }
 
     function addGroup() {

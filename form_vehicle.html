@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary-color: #2563eb;
+      --bg-color: #f8fafc;
+      --card-bg: #ffffff;
+      --text-color: #1e293b;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      font-size: 16px;
+    }
+
+    .container {
+      padding-top: 2rem;
+      padding-bottom: 2rem;
+    }
+
+    .main-card {
+      background-color: var(--card-bg);
+      border-radius: 1rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      padding: 2rem;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    h1.form-title {
+      font-size: 1.75rem;
+      font-weight: 600;
+      color: var(--text-color);
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+
+    .form-control {
+      border-radius: 0.5rem;
+      padding: 0.75rem 1rem;
+      font-size: 1rem;
+    }
+
+    .form-control:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+    }
+
+    .btn-primary {
+      background-color: var(--primary-color);
+      border-color: var(--primary-color);
+      padding: 0.75rem 1.5rem;
+      border-radius: 0.5rem;
+      font-weight: 500;
+      width: 100%;
+    }
+  </style>
+</head>
+
+<body>
+  <?!= include('header'); ?>
+
+  <div class="container">
+    <div class="main-card">
+      <h1 class="form-title">Ajouter un Véhicule</h1>
+
+      <form id="vehicle-form">
+        <div class="mb-3">
+          <label class="form-label">Moyen de transport (Immatriculation ou Type)</label>
+          <input type="text" class="form-control" name="vehicleName" required placeholder="Ex: BN 1234 RB ou Taxi">
+        </div>
+
+        <div class="mt-4">
+          <button type="submit" class="btn btn-primary btn-lg">Ajouter</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal fade" id="feedbackModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1"
+    aria-labelledby="staticBackdropLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content border-0 shadow">
+        <div class="modal-header border-bottom-0">
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body text-center pb-5">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let feedbackModal;
+    document.addEventListener('DOMContentLoaded', () => {
+      feedbackModal = new bootstrap.Modal(document.getElementById('feedbackModal'), { keyboard: false });
+    });
+
+    function showFeedback(title, message, isSuccess) {
+      const modalBody = document.querySelector('.modal-body');
+      const feedbackDiv = document.createElement('div');
+      feedbackDiv.className = 'alert mt-3';
+
+      if (isSuccess) {
+        feedbackDiv.classList.add('alert-success');
+        feedbackDiv.innerHTML = `<h5 class="alert-heading text-success">${title}</h5><p class="mb-0">${message}</p>`;
+      } else {
+        feedbackDiv.classList.add('alert-danger');
+        feedbackDiv.innerHTML = `<h5 class="alert-heading text-danger">${title}</h5><p>${message}</p>`;
+      }
+
+      modalBody.innerHTML = '';
+      modalBody.appendChild(feedbackDiv);
+      feedbackModal.show();
+    }
+
+    document.getElementById('vehicle-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      const btn = this.querySelector('button[type="submit"]');
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Ajout en cours...';
+
+      const vehicleName = this.vehicleName.value;
+
+      google.script.run
+        .withSuccessHandler(() => {
+          showFeedback('Succès', 'Véhicule ajouté avec succès !', true);
+          this.reset();
+          btn.disabled = false;
+          btn.textContent = originalText;
+        })
+        .withFailureHandler((err) => {
+          showFeedback('Erreur', 'Erreur: ' + err.message, false);
+          btn.disabled = false;
+          btn.textContent = originalText;
+        })
+        .addVehicle(vehicleName);
+    });
+  </script>
+</body>
+
+</html>
