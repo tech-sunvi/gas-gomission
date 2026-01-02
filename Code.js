@@ -1,20 +1,48 @@
 const SPREADSHEET_ID = '1MTNQLZMBJCyirap6tKG9dbkHEFiRMl3drtJ6LO3bEIk';
 const destinationFolderId = '1Z_JzwMsJ90gguIXmTwAbSLJOW1pc5hgB';
 const personalTemplateId = '1ilY1k5UKbnihJ0khIfbFiS-tNcVwJkKT8oYL1ZKSXVA';
+const noteServiceMultipleTemplateId = '1kx1tsVfDj1dBcaSqgRKeJ3wqLHDvp6z6zWu70d912bc';
+const noteServiceSingleTemplateId = '1GI_co10kNRzpkJwB1M7Td_lokBc-j-ESQU2UdRpyjs4';
 const MISSING_DATA = '-----';
+const MISSION_GROUPS_SHEET_NAME = 'MissionGroups';
 
 // Helper to get Spreadsheet instance efficiently
 let _ss = null;
 function getSpreadsheet() {
-  if (!_ss) _ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  if (!_ss) {
+    _ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    // Ensure MissionGroups sheet exists
+    if (!_ss.getSheetByName(MISSION_GROUPS_SHEET_NAME)) {
+      const sheet = _ss.insertSheet(MISSION_GROUPS_SHEET_NAME);
+      sheet.appendRow(['MissionID', 'Vehicle', 'DriverID', 'PassengerIDs']);
+    }
+  }
   return _ss;
 }
 
 function doGet(e) {
-  if (e.parameter && e.parameter.page === 'edit') {
-    return HtmlService.createHtmlOutputFromFile('editPersonnel');
+  let template;
+  let page = e.parameter.page;
+  
+  if (page === 'edit') {
+    template = HtmlService.createTemplateFromFile('editPersonnel');
+  } else if (page === 'add_employee') {
+    template = HtmlService.createTemplateFromFile('form_employee');
+  } else if (page === 'add_vehicle') {
+    template = HtmlService.createTemplateFromFile('form_vehicle');
+  } else if (page === 'add_destination') {
+    template = HtmlService.createTemplateFromFile('form_destination');
+  } else {
+    // Default to 'new_mission' or root
+    template = HtmlService.createTemplateFromFile('startingForm');
   }
-  return HtmlService.createHtmlOutputFromFile('startingForm');
+  
+  return template.evaluate()
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+function include(filename) {
+  return HtmlService.createTemplateFromFile(filename).evaluate().getContent();
 }
 
 // ==========================================
@@ -295,43 +323,10 @@ function processMissionData(data) {
     const missionId = `ODM-${Date.now()}`;
     const headers = missionSheet.getRange(1, 1, 1, missionSheet.getLastColumn()).getValues()[0];
 
-    const newRowData = headers.map(header => {
-      if (header === 'MissionId') return missionId;
-      if (header === 'CreatedAt') {
-        const now = new Date();
-        return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')} ${now.getHours()}:${now.getMinutes()}`;
-      }
-
-      // Map data fields to headers
-      // Note: data keys usually match headers but lowerCamelCase vs Header Name needs mapping if strictly required.
-      // In the original code, it checked `if(data[el])`. Let's assume headers in sheet match keys in data object somewhat or data object keys are used directly?
-      // The original code used: if(data[el]).
-      // This implies the Sheet Headers MUST match the keys in the `data` object (e.g. 'reference', 'odmType').
-      // Let's preserve that logic.
-
-      const value = data[header]; // This relies on Header Name == JSON Key Name
-      if (value) {
-        return Array.isArray(value) ? value.join(' - ') : value;
-      }
-      return '';
-    });
-
-    // Since original code had specific header mapping logic that might be fragile (it relied on data[headerName]),
-    // but the JSON keys are 'reference', 'odmType' etc. and headers might be 'Reference', 'Type' etc.
-    // The original code: `if(data[el])`. `el` is the header name.
-    // So if Header is 'Reference', data['Reference'] must exist.
-    // BUT the frontend sends `reference` (lowercase).
-    // Use keys map if needed, or rely on original behavior (which imply headers match keys exactly or keys were added to data object).
-    // To be safe and identical to functionality, I will trust the original logic's assumption or Map it if broken.
-    // Original: `var newRowData = [missionId] ... headers.forEach(el => ...)`
-    // Actually, original code pushed `missionId` first, then looped headers? Use careful reconstruction.
-    // Correction: It initialized `newRowData = [missionId]`.
-    // Then looped headers. CONSTANT WARNING: If `headers` includes 'MissionId' at index 0, it would double add.
-    // Let's stick to a robust approach:
-
     const rowToAppend = [];
     headers.forEach(header => {
-      if (header === 'MissionId') {
+      // Fix: Check for both MissionId and MissionID to be safe
+      if (header === 'MissionId' || header === 'MissionID') {
         rowToAppend.push(missionId);
       } else if (header === 'CreatedAt') {
         const now = new Date(); // Simple formatting
@@ -348,6 +343,21 @@ function processMissionData(data) {
     });
 
     missionSheet.appendRow(rowToAppend);
+
+    // [New] Save Groups to 'MissionGroups' Sheet
+    if (data.groups && data.groups.length > 0) {
+        const groupsSheet = ss.getSheetByName(MISSION_GROUPS_SHEET_NAME);
+        // Headers: MissionID, Vehicle, DriverID, PassengerIDs
+        // Ensure we follow order or dynamically map if needed. For now simple append.
+        data.groups.forEach(group => {
+           groupsSheet.appendRow([
+               missionId,
+               group.vehicle || '',
+               group.driverId || '',
+               (group.passengers || []).join(',')
+           ]);
+        });
+    }
 
     // 4. Generate Document
     if (data.odmType === 'individual') {
@@ -369,13 +379,7 @@ function processMissionData(data) {
  * @param {Map} personnelMap - Cached personnel data (ID -> Record)
  */
 function generateIndividualDocument(data, personnelMap) {
-  const docName = data.docName ? `Ordre de Mission - ${data.docName}` : `Ordre de Mission - ${data.reference} - ${new Date().toLocaleDateString()}`;
-
-  const templateFile = DriveApp.getFileById(personalTemplateId);
-  const destinationFolder = DriveApp.getFolderById(destinationFolderId);
-  const newDocFile = templateFile.makeCopy(docName, destinationFolder);
-  const doc = DocumentApp.openById(newDocFile.getId());
-  const body = doc.getBody();
+  const docName = data.docName ? `Ordre de Mission - ${new Date().toLocaleDateString()} ${data.docName}` : `Ordre de Mission - ${data.reference} - ${new Date().toLocaleDateString()}`;
 
   // Helper for dates
   const formatDate = (dateStr) => {
@@ -385,6 +389,16 @@ function generateIndividualDocument(data, personnelMap) {
     });
   };
 
+  // 1. Create Final Empty Document
+  const destinationFolder = DriveApp.getFolderById(destinationFolderId);
+  // Create doc in root first (default behavior of create), then move? Or just create.
+  // DocumentApp.create() creates in root. We need to move it.
+  const finalODMDoc = DocumentApp.create(docName);
+  const finalODMDocFile = DriveApp.getFileById(finalODMDoc.getId());
+  finalODMDocFile.moveTo(destinationFolder);
+  
+  const finalODMDocBody = finalODMDoc.getBody();
+
   // Base ODM Data
   const replacements = {
     reference: data.reference || MISSING_DATA,
@@ -392,70 +406,298 @@ function generateIndividualDocument(data, personnelMap) {
     dateDepart: formatDate(data.departureDate),
     dateRetour: formatDate(data.returnDate),
     transportMeans: (data.transportMeans || []).join(', ') || MISSING_DATA,
-    budgets: (data.budgets || []).join(', ') || MISSING_DATA
+    budgets: (data.budgets || []).join(', ') || 'Budget SRTB',
+    // Add missing fields from original logic
+    datesString: data.departureDate === data.returnDate ? `le ${formatDate(data.departureDate)}` : `du ${formatDate(data.departureDate)} au ${formatDate(data.returnDate)}`
   };
 
   // Driver Info (Primary Driver)
-  if (data.drivers && data.drivers.length > 0) {
-    const driverRecord = personnelMap.get(String(data.drivers[0]));
-    replacements.driver = driverRecord ? `${driverRecord['Nom']} ${driverRecord['Prénoms']}` : MISSING_DATA;
+  // Determine Mission Object Vowel logic (Global for all members?)
+  const vowels = ['a', 'e', 'é', 'è', 'ê', 'i', 'î', 'ï', 'o', 'ô', 'ö', 'u', 'ù', 'û', 'ü', 'y'];
+  let globalDriverMissionObjectIntro = '';
+  if (data.missionObject && vowels.includes(data.missionObject.charAt(0).toLowerCase())) {
+    globalDriverMissionObjectIntro = "conduire l'équipe chargée d'";
   } else {
-    replacements.driver = MISSING_DATA;
+    globalDriverMissionObjectIntro = "conduire l'équipe chargée de ";
   }
 
-  // Process Each Member
-  // Note: If template is meant for one person (Individual ODM), usually we generate ONE doc per person? 
-  // OR one doc containing all? The original code loops `data.members.forEach` and does `body.replaceText`. 
-  // If there are multiple members in "Individual" mode (which sounds contradictory but possible), 
-  // replacing '{{nom}}' once will replace it for ALL occurrences. 
-  // The original code seems to assume 1 member OR it overwrites placeholders (which only works effectively for 1 member).
-  // If 'Individual' ODM implies 1 form per person, logic might be needed to duplicate the template/pages.
-  // HOWEVER, based on exact refactoring: I will preserve original behavior: Loop members and replace. 
-  // (Warning: If multiple members, later ones might find no placeholders if they were replaced by the first one).
+  // 2. Process Groups & Members
+  const noteDeServiceData = [];
 
-  // Assuming typically 1 member for Individual ODM or the template is designed to handle list?
-  // Original code: `data.members.forEach(memberId => { ... body.replaceText ... })`
-  // I will strictly follow this logic but use the Map.
+  // Logic: Iterate groups.
+  // data.groups is expected. If missing (legacy usage?), use data.members as specific group?
+  // Let's normalize: if no groups but members exist, treat as 1 group.
+  let groupsToProcess = data.groups || [];
+  if (groupsToProcess.length === 0 && data.members && data.members.length > 0) {
+      // Fallback for legacy calls or simple mode if logic still routes here
+      groupsToProcess.push({
+          vehicle: (data.transportMeans && data.transportMeans[0]) || '',
+          driverId: (data.drivers && data.drivers[0]) || '',
+          passengers: data.members
+      });
+  }
 
-  data.members.forEach(memberId => {
-    const member = personnelMap.get(String(memberId));
-    if (!member) return;
+  groupsToProcess.forEach(group => {
+      // Resolve Driver for this group
+      let groupDriverName = MISSING_DATA;
+      if (group.driverId) {
+          const r = personnelMap.get(String(group.driverId));
+          if (r) groupDriverName = `${r['Nom']} ${r['Prénoms']}`;
+      } else if (group.driverName) {
+           groupDriverName = group.driverName;
+      }
 
-    // Build specific member replacements
-    const memberReplacements = {
-      ...replacements, // Inherit base replacements
-      nom: member['Nom'],
-      prenom: member['Prénoms'],
-      fullName: `${member['Nom']} ${member['Prénoms']}`,
-      civilite: member['Civilité'],
-      fonction: member['Fonction'] || MISSING_DATA,
-      grade: member['Grade'] || MISSING_DATA,
-      indice: member['Indice'] || MISSING_DATA,
-      matricule: member['Matricule'] || MISSING_DATA,
-      ifu: member['IFU'] || MISSING_DATA,
-      adresse: member['Adresse complète'] || MISSING_DATA,
-      lieuNaissance: member['Lieu de naissance'] || MISSING_DATA,
-      dateNaissance: member['Date de naissance'] ? new Date(member['Date de naissance']).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : MISSING_DATA,
-    };
+      // Iterate passengers in this group
+      const passengers = group.passengers || [];
+      passengers.forEach(memberId => {
+        const member = personnelMap.get(String(memberId));
+        if (!member) return;
 
-    // Phone formatting
-    let phone = member['Telephone'] ? String(member['Telephone']) : '';
-    if (phone.includes('+229')) phone = phone.replace('+229', '');
-    memberReplacements.phone = phone.replace(/\s/g, '').trim() || MISSING_DATA;
+        // Collect data for Note De Service (Global list)
+        noteDeServiceData.push(`- ${member['Civilité']} ${member['Nom']} ${member['Prénoms']}, ${member['Fonction']}`);
 
-    // Special Mission Object logic
-    memberReplacements.missionObject = (member['Fonction'] === 'Conducteur de véhicules administratifs')
-      ? `conduire l'équipe chargée de ${data.missionObject}`
-      : data.missionObject;
+        // Build specific member replacements
+        const memberReplacements = {
+          ...replacements,
+          // Overwrite transport/driver with GROUP specific info
+          transportMeans: group.vehicle || replacements.transportMeans,
+          driver: groupDriverName,
+          
+          nom: member['Nom'],
+          prenom: member['Prénoms'],
+          fullName: `${member['Nom']} ${member['Prénoms']}`,
+          civilite: member['Civilité'],
+          fonction: member['Fonction'] || MISSING_DATA,
+          grade: member['Grade'] || MISSING_DATA,
+          indice: member['Indice'] || MISSING_DATA,
+          matricule: member['Matricule'] || MISSING_DATA,
+          ifu: member['IFU'] || MISSING_DATA,
+          adresse: (member['Adresse complète'] || MISSING_DATA).replace(/;\s*$/, ''),
+          lieuNaissance: member['Lieu de naissance'] || MISSING_DATA,
+          dateNaissance: member['Date de naissance'] ? new Date(member['Date de naissance']).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : MISSING_DATA,
+          charge: member['Civilité'] === 'Monsieur' ? 'chargé' : 'chargée'
+        };
 
-    // Apply replacements
-    for (const [key, val] of Object.entries(memberReplacements)) {
-      body.replaceText(`{{${key}}}`, String(val));
-    }
+        // Phone formatting
+        let phone = member['Telephone'] ? String(member['Telephone']) : '';
+        if (phone.includes('+229')) phone = phone.replace('+229', '');
+        memberReplacements.phone = phone.replace(/\s/g, '').trim() || MISSING_DATA;
+
+        // Mission Object Logic
+        if (member['Fonction'] && member['Fonction'].toLowerCase() === 'conducteur de véhicules administratifs') {
+           memberReplacements.missionObject = `${globalDriverMissionObjectIntro}${data.missionObject}`;
+        } else {
+           memberReplacements.missionObject = data.missionObject;
+        }
+
+        // Creating member list for Note de Service
+        // This is tricky: Note de Service needs ALL members from ALL groups.
+        // But we are inside the loop.
+        // Wait, the logic for "Note de Service" depends on `noteDeServiceData` which is being built HERE.
+        // IF we join it here, it will only contain members processed SO FAR.
+        // CORRECT LOGIC: We must process ALL members first to build `noteDeServiceData`, THEN generate documents?
+        // OR pass a reference?
+        // In previous working code, we iterated members, updated `noteDeServiceData`, then joined it.
+        // BUT `noteDeServiceData` only had *previous* + *current* member.
+        // Is that desired? No, usually Note de Service lists EVERYONE.
+        // If the original code worked by accumulating, it means the LAST page had everyone?
+        // Or did every page list everyone processed *so far*?
+        // Actually, for individual ODM, `membersList` placeholder might strictly refer to the Note De Service page attached at the end.
+        // BUT `generateIndividualDocument` makes a TEMP doc for *each* member.
+        // Valid question: Does the individual ODM page (page 1) show the list of everyone?
+        // Usually not. It shows "Order de Mission" for X.
+        // The list is on the "Note de Service".
+        // SO: We can defer the Note De Service generation to the end (which we do).
+        // BUT: Does `memberReplacements` use `membersList`?
+        // Lines 413-418 in original: `memberReplacements.membersList = noteDeServiceData.join('\n');`
+        // This implies the individual ODM template *might* use it.
+        // If it does, using a partial list is buggy or weird.
+        // Ideally, we should pre-calculate the full list.
+        
+        // REFACTOR: Build full member list first.
+        // Since we are iterating anyway, let's keep the flow but maybe pre-calculate `noteDeServiceData` if possible?
+        // Or just accept the accumulation behavior (it works for the final Note de Service, but for individual pages if they show it, it's partial).
+        // Given the prompt "we find out that some missions have so many participants...", the individual page likely doesn't list everyone.
+        // It's the Note de Service that lists everyone.
+        // I will stick to the accumulation logic but ideally, I should fix it. 
+        // Let's stick to accumulation to minimize regression risk on behavior I haven't fully inspected in the template.
+        // memberReplacements.membersList = noteDeServiceData.join('\n');
+        
+        // UPDATE: I will NOT change the logic of accumulation *inside* the loop for now,
+        // but I will ensure `noteDeServiceData` aggregates across GROUPS.
+      }); 
+  });
+  
+  // NOW iterate again to generate docs?
+  // No, we need to generate docs *as* we iterate or after.
+  // If we want `membersList` to be complete on all pages (if used), we must pre-process.
+  // Let's do 2 passes. Pass 1: Collect all data. Pass 2: Generate.
+  
+  // Pass 1: Build comprehensive list
+  const allMembersForNote = [];
+  groupsToProcess.forEach(group => {
+       const groupMembers = [...(group.passengers || [])];
+       // Add driver if present and distinct
+       if (group.driverId && !groupMembers.includes(group.driverId)) {
+           groupMembers.unshift(group.driverId);
+       }
+       
+       groupMembers.forEach(pId => {
+           const m = personnelMap.get(String(pId));
+           if(m) allMembersForNote.push(`- ${m['Civilité']} ${m['Nom']} ${m['Prénoms']}, ${m['Fonction']}`);
+       });
+  });
+  const fullMembersListString = allMembersForNote.join('\n');
+
+  // Pass 2: Generate
+  groupsToProcess.forEach(group => {
+      // Group Driver
+      let groupDriverName = MISSING_DATA;
+      if (group.driverId) {
+          const r = personnelMap.get(String(group.driverId));
+          if (r) groupDriverName = `${r['Nom']} ${r['Prénoms']}`;
+      } else if (group.driverName) {
+           groupDriverName = group.driverName;
+      }
+      
+      const passengers = group.passengers || [];
+      // Combine driver and passengers for ODM generation
+      // We want to generate an ODM for the driver too.
+      const membersToGenerate = [...passengers];
+      if (group.driverId && !membersToGenerate.includes(group.driverId)) {
+          membersToGenerate.unshift(group.driverId);
+      }
+
+      membersToGenerate.forEach(memberId => {
+        const member = personnelMap.get(String(memberId));
+        if (!member) return;
+        
+        const memberReplacements = {
+          ...replacements,
+          transportMeans: group.vehicle || replacements.transportMeans,
+          driver: groupDriverName,
+          nom: member['Nom'],
+          prenom: member['Prénoms'],
+          fullName: `${member['Nom']} ${member['Prénoms']}`,
+          civilite: member['Civilité'],
+          fonction: member['Fonction'] || MISSING_DATA,
+          grade: member['Grade'] || MISSING_DATA,
+          indice: member['Indice'] || MISSING_DATA,
+          matricule: member['Matricule'] || MISSING_DATA,
+          ifu: member['IFU'] || MISSING_DATA,
+          adresse: (member['Adresse complète'] || MISSING_DATA).replace(/;\s*$/, ''),
+          lieuNaissance: member['Lieu de naissance'] || MISSING_DATA,
+          dateNaissance: member['Date de naissance'] ? new Date(member['Date de naissance']).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : MISSING_DATA,
+          charge: member['Civilité'] === 'Monsieur' ? 'chargé' : 'chargée',
+          membersList: fullMembersListString, // Use full list
+          phone: (member['Telephone'] ? String(member['Telephone']).replace('+229', '').replace(/\s/g, '').trim() : MISSING_DATA)
+        };
+        
+        if ((member['Fonction'] && member['Fonction'].toLowerCase() === 'conducteur de véhicules administratifs') || String(memberId) === String(group.driverId)) {
+           memberReplacements.missionObject = `${globalDriverMissionObjectIntro}${data.missionObject}`;
+        } else {
+           memberReplacements.missionObject = data.missionObject;
+        }
+
+        // Generate Temp Doc
+        const tempDocFile = DriveApp.getFileById(personalTemplateId).makeCopy();
+        const tempDoc = DocumentApp.openById(tempDocFile.getId());
+        const tempBody = tempDoc.getBody();
+
+        for (const [key, val] of Object.entries(memberReplacements)) {
+          tempBody.replaceText(`{{${key}}}`, String(val));
+        }
+        tempDoc.saveAndClose();
+
+        // Append to Final
+        const tempDocFilled = DocumentApp.openById(tempDocFile.getId());
+        const tempDocFilledBody = tempDocFilled.getBody();
+        const totalElements = tempDocFilledBody.getNumChildren();
+
+        for (let i = 0; i < totalElements; i++) {
+             const element = tempDocFilledBody.getChild(i).copy();
+             appendElement(finalODMDocBody, element);
+        }
+        
+        // Formatting
+        const paragraphs = finalODMDocBody.getParagraphs();
+        paragraphs.forEach(function (paragraph) {
+            const text = paragraph.getText().trim();
+            if (text.toUpperCase() === 'ORDRE DE MISSION') {
+                paragraph.setFontFamily('Calibri').setFontSize(24).setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+            } else {
+                paragraph.setFontFamily('Calibri').setFontSize(13).setSpacingAfter(5);
+            }
+        });
+
+        finalODMDocBody.appendPageBreak();
+        tempDocFile.setTrashed(true);
+      });
   });
 
-  doc.saveAndClose();
-  return newDocFile.getUrl();
+  // 5. Generate Note de Service
+  // Prepare data for note de service
+  // Original logic: Remove missionObject to prevent driverIntro logic carrying over?
+  // And re-add original mission object.
+  const npsData = {
+      ...replacements,
+      missionObject: data.missionObject,
+      membersList: fullMembersListString
+  };
+
+  const noteServiceDocId = generateNoteDeService(npsData, allMembersForNote);
+  const tempNoteServiceDoc = DocumentApp.openById(noteServiceDocId);
+  const tempNoteServiceDocBody = tempNoteServiceDoc.getBody();
+  const totalElements = tempNoteServiceDocBody.getNumChildren();
+
+  for (let i = 0; i < totalElements; i++) {
+      const element = tempNoteServiceDocBody.getChild(i).copy();
+      appendElement(finalODMDocBody, element);
+  }
+
+  DriveApp.getFileById(noteServiceDocId).setTrashed(true);
+  finalODMDoc.saveAndClose();
+  
+  return finalODMDocFile.getUrl();
+}
+
+/**
+ * Helper to append different element types to a document body.
+ */
+function appendElement(docBody, element) {
+  const type = element.getType();
+  switch (type) {
+    case DocumentApp.ElementType.PARAGRAPH:
+      docBody.appendParagraph(element); // .copy() not needed if element is already a copy? logic says element.copy() in loop.
+      break;
+    case DocumentApp.ElementType.TABLE:
+      docBody.appendTable(element);
+      break;
+    case DocumentApp.ElementType.LIST_ITEM:
+      docBody.appendListItem(element);
+      break;
+    case DocumentApp.ElementType.INLINE_IMAGE:
+      docBody.appendImage(element);
+      break;
+    default:
+      Logger.log('Unsupported element type: ' + type);
+  }
+}
+
+/**
+ * Generates the Note de Service temp doc.
+ */
+function generateNoteDeService(odmData, membersDataArray) {
+    const noteServiceTemplateId = membersDataArray.length > 1 ? noteServiceMultipleTemplateId : noteServiceSingleTemplateId;
+    const tempFile = DriveApp.getFileById(noteServiceTemplateId).makeCopy();
+    const tempDoc = DocumentApp.openById(tempFile.getId());
+    const body = tempDoc.getBody();
+
+    for (const [key, val] of Object.entries(odmData)) {
+        body.replaceText(`{{${key}}}`, String(val));
+    }
+    tempDoc.saveAndClose();
+    return tempFile.getId();
 }
 
 // Dummy data just for testing
@@ -530,3 +772,59 @@ function testSubmission() {
   processMissionData(data);
 }
 
+
+// ==========================================
+// RESOURCE MANAGEMENT FUNCTIONS
+// ==========================================
+
+function addEmployee(data) {
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName('Personnel');
+  // Generate EmployeeId: Max existing ID + 1
+  // ID is in column 1. Get values, flatten, convert to number, find max.
+  // Warning: getRange(2, 1, lastRow-1) might fail if lastRow < 2 (empty sheet).
+  let newId = 1;
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    const existingIds = sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat().map(Number).filter(n => !isNaN(n));
+    if (existingIds.length > 0) {
+      newId = Math.max(...existingIds) + 1;
+    }
+  }
+
+  // PRODUCT_SPEC Order:
+  // EmployeeId, Nom, Prénoms, Civilité, Fonction, Date de naissance, Lieu de naissance, Grade, Indice, Matricule, IFU, Adresse complète, Telephone, Sexe, Email
+  const row = [
+    newId,
+    data.nom,
+    data.prenoms,
+    data.civilite,
+    data.fonction,
+    data.dateNaissance ? new Date(data.dateNaissance) : '', // Store as date object or string? Sheet prefers Date object for date columns usually
+    data.lieuNaissance,
+    data.grade,
+    data.indice,
+    data.matricule,
+    data.ifu,
+    data.adresse,
+    data.telephone,
+    data.sexe,
+    data.email
+  ];
+  sheet.appendRow(row);
+  return newId;
+}
+
+function addVehicle(vehicleName) {
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName('Transport');
+  sheet.appendRow([vehicleName]);
+  return true;
+}
+
+function addDestination(destinationName) {
+  const ss = getSpreadsheet();
+  const sheet = ss.getSheetByName('Destination');
+  sheet.appendRow([destinationName]);
+  return true;
+}

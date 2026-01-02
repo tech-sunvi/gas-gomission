@@ -36,6 +36,9 @@
       font-family: 'Inter', sans-serif;
       background-color: var(--bg-color);
       color: var(--text-color);
+    }
+
+    .container {
       padding-top: 2rem;
       padding-bottom: 2rem;
     }
@@ -94,6 +97,16 @@
       background-color: var(--primary-hover);
       border-color: var(--primary-hover);
       transform: translateY(-1px);
+    }
+
+    .btn-outline-primary {
+      color: var(--primary-color);
+      border-color: var(--primary-color);
+    }
+
+    .btn-outline-primary:hover {
+      background-color: var(--primary-color);
+      color: white;
     }
 
     /* Autocomplete Suggestions */
@@ -202,21 +215,77 @@
       font-size: 0.875rem;
       margin-top: 0.25rem;
     }
+
+    /* Mobile Responsiveness */
+    @media (max-width: 768px) {
+      body {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+        font-size: 16px;
+        /* Ensure readability */
+      }
+
+      .main-card {
+        padding: 1.25rem;
+        border-radius: 0.5rem;
+      }
+
+      h1.form-title {
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+      }
+
+      .form-control,
+      .form-select {
+        font-size: 16px;
+        /* Prevent zoom */
+      }
+
+      .btn-lg {
+        width: 100%;
+        padding: 0.75rem 1rem;
+      }
+    }
+
+    /* Group Styling */
+    .group-card {
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      background-color: #f9fafb;
+    }
+
+    .group-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .group-title {
+      font-weight: 600;
+      color: var(--text-color);
+      font-size: 1.1rem;
+    }
   </style>
 </head>
 
 <body>
+  <?!= include('header'); ?>
   <div class="container">
     <div class="main-card">
       <h1 class="form-title">Demande d'ordre de mission</h1>
 
       <form id="mission-form">
 
+        <!-- STEP 1: GENERAL INFO -->
+        <h4 class="mb-3 text-primary border-bottom pb-2">Informations Générales</h4>
+
         <!-- Document Reference -->
         <div class="mb-4">
           <label for="reference" class="form-label">Référence du document d'autorisation</label>
-          <input type="text" class="form-control" id="reference"
-            placeholder="Facultatif pour les ordres de mission collectifs">
+          <input type="text" class="form-control" id="reference" placeholder="Référence (e.g., Note de service N°...)">
         </div>
 
         <!-- Document Name -->
@@ -234,6 +303,18 @@
           </select>
         </div>
 
+        <!-- Dates -->
+        <div class="row mb-4">
+          <div class="col-12 col-md-6 mb-3 mb-md-0">
+            <label for="departure-date" class="form-label">Date de départ</label>
+            <input type="date" class="form-control required" id="departure-date">
+          </div>
+          <div class="col-12 col-md-6">
+            <label for="return-date" class="form-label">Date de retour</label>
+            <input type="date" class="form-control required" id="return-date">
+          </div>
+        </div>
+
         <!-- Destinations -->
         <div class="mb-4 suggestions-container">
           <label for="destination" class="form-label">Destination(s)</label>
@@ -249,34 +330,6 @@
             placeholder="Décrivez l'objet de la mission..."></textarea>
         </div>
 
-        <!-- Members -->
-        <div class="mb-4 suggestions-container">
-          <label for="members-input" class="form-label">Membres de la mission</label>
-          <input type="text" id="members-input" class="form-control" placeholder="Rechercher un membre...">
-          <div id="members-suggestions" class="suggestions-list"></div>
-          <div id="selected-members"></div>
-        </div>
-
-        <!-- Dates -->
-        <div class="row mb-4">
-          <div class="col-12 col-md-6 mb-3 mb-md-0">
-            <label for="departure-date" class="form-label">Date de départ</label>
-            <input type="date" class="form-control required" id="departure-date">
-          </div>
-          <div class="col-12 col-md-6">
-            <label for="return-date" class="form-label">Date de retour</label>
-            <input type="date" class="form-control required" id="return-date">
-          </div>
-        </div>
-
-        <!-- Transport -->
-        <div class="mb-4 suggestions-container">
-          <label for="transport" class="form-label">Moyen de transport</label>
-          <input type="text" id="transport" class="form-control" placeholder="Rechercher un moyen de transport...">
-          <div id="transport-suggestions" class="suggestions-list"></div>
-          <div id="selected-transports"></div>
-        </div>
-
         <!-- Budget -->
         <div class="mb-5 suggestions-container">
           <label for="budget" class="form-label">Budget</label>
@@ -286,7 +339,21 @@
           <div id="selected-budgets"></div>
         </div>
 
-        <div class="d-grid gap-2">
+        <!-- STEP 2: GROUPS -->
+        <h4 class="mb-3 mt-5 text-primary border-bottom pb-2">Groupes & Participants</h4>
+        <p class="text-muted mb-4">Ajoutez des groupes pour répartir les participants par véhicule.</p>
+
+        <div id="groups-container">
+          <!-- Groups will be added here dynamically -->
+        </div>
+
+        <div class="mb-5">
+          <button type="button" class="btn btn-outline-primary w-100" id="btn-add-group">
+            + Ajouter un Groupe
+          </button>
+        </div>
+
+        <div class="d-grid gap-2 mt-5">
           <button type="submit" class="btn btn-primary btn-lg">Générer les ordres de mission</button>
         </div>
       </form>
@@ -307,6 +374,8 @@
     </div>
   </div>
 
+  <!-- Hidden Templates for Autocomplete Managers to clone logic? No, classes handle instances. -->
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
     integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
     crossorigin="anonymous"></script>
@@ -317,10 +386,6 @@
     const WARNING_TEXT = 'Vous devez remplir ce champ.';
 
     // --- Utility Functions ---
-
-    /**
-     * Debounce function to limit the rate at which a function triggers.
-     */
     function debounce(func, wait) {
       let timeout;
       return function (...args) {
@@ -329,41 +394,47 @@
       };
     }
 
-    // --- Autocomplete Manager Class ---
+    // Unique ID generator for groups
+    let groupCounter = 0;
+    function generateGroupId() {
+      return `group-${groupCounter++}`;
+    }
 
+    // --- Autocomplete Manager Class (Refactored to support dynamic elements) ---
     class AutocompleteManager {
       constructor(options) {
-        this.inputId = options.inputId;
-        this.suggestionsId = options.suggestionsId;
-        this.selectedContainerId = options.selectedContainerId;
+        this.inputId = options.inputId; // Element ID string
+        this.suggestionsId = options.suggestionsId; // Element ID string
+        this.selectedContainerId = options.selectedContainerId; // Element ID string OR null (for single select)
         this.backendMethod = options.backendMethod;
-        this.chipPropertyClass = options.chipPropertyClass || ''; // class identifier for data scraping
+        this.chipPropertyClass = options.chipPropertyClass || '';
         this.renderSuggestionInfo = options.renderSuggestionInfo || ((item) => [`<span>${item}</span>`, item]);
+        this.isSingleSelect = options.isSingleSelect || false;
+        this.onSelect = options.onSelect || null; // Callback when an item is selected
 
         this.inputElement = document.getElementById(this.inputId);
         this.suggestionsElement = document.getElementById(this.suggestionsId);
-        this.selectedContainer = document.getElementById(this.selectedContainerId);
+        this.selectedContainer = this.selectedContainerId ? document.getElementById(this.selectedContainerId) : null;
 
         this.init();
       }
 
       init() {
         if (!this.inputElement) return;
-
-        // Attach debounced input listener
         const debouncedSearch = debounce(this.handleInput.bind(this), 300);
         this.inputElement.addEventListener('input', debouncedSearch);
+
+        // Handle focus to show suggestions if value exists? Optional.
       }
 
       handleInput() {
         const query = this.inputElement.value;
-        if (!query) {
+        if (!query || query.length < 1) { // Allow 1 char?
           this.suggestionsElement.innerHTML = '';
           this.suggestionsElement.classList.remove('active');
           return;
         }
 
-        // Call Google Apps Script backend
         google.script.run
           .withSuccessHandler(this.showSuggestions.bind(this))
         [this.backendMethod](query);
@@ -381,11 +452,8 @@
 
         suggestions.forEach(item => {
           const div = document.createElement('div');
-          // renderSuggestionInfo returns [innerHtml, rawValueForChip]
           const [htmlContent, rawValue] = this.renderSuggestionInfo(item);
-
           // If the user didn't provide a custom class, we wrap common text
-          // Note: The specific classes (.memberId etc) are needed for 'prepareData'
           let chipContent = htmlContent;
           if (this.chipPropertyClass && !htmlContent.includes(this.chipPropertyClass)) {
             chipContent = `<span class="${this.chipPropertyClass}">${htmlContent}</span>`;
@@ -393,16 +461,32 @@
 
           div.innerHTML = htmlContent;
           div.onclick = () => {
-            this.addChip(chipContent);
+            if (this.isSingleSelect) {
+              // If single select, just set input value and maybe hidden field
+              // For this implementation (simple), we just set input value
+              // In a robust one we might need to store ID separately
+              if (typeof rawValue === 'object') {
+                // Specific case: Employee [id, first, last...]
+                this.inputElement.value = `${rawValue[1]} ${rawValue[2]}`; // Name
+                if (this.onSelect) this.onSelect(rawValue);
+              } else {
+                this.inputElement.value = rawValue;
+                if (this.onSelect) this.onSelect(rawValue);
+              }
+            } else {
+              this.addChip(chipContent);
+              this.inputElement.value = '';
+            }
             this.suggestionsElement.innerHTML = '';
             this.suggestionsElement.classList.remove('active');
-            this.inputElement.value = '';
           };
           this.suggestionsElement.appendChild(div);
         });
       }
 
       addChip(htmlContent) {
+        if (!this.selectedContainer) return;
+
         const chip = document.createElement('div');
         chip.className = 'chip';
         chip.innerHTML = htmlContent;
@@ -427,29 +511,106 @@
       }
     }
 
-    // --- Main Application Logic ---
+    // --- Dynamic Group Manager ---
 
-    document.addEventListener('DOMContentLoaded', () => {
-      // Initialize Bootstrap Modal
-      const feedbackModal = new bootstrap.Modal('#feedbackModal', { keyboard: false });
-      const modalBody = document.querySelector('.modal-body');
+    const groupsContainer = document.getElementById('groups-container');
+    const addGroupBtn = document.getElementById('btn-add-group');
 
-      // --- Initialize Autocompletes ---
+    // Store autocomplete instances to avoid memory leaks if we were strict (we are not being strict here)
+    const activeAutocompletes = [];
 
-      // 1. Members
+    function createGroupHTML(id) {
+      return `
+        <div class="group-card" id="${id}">
+          <div class="group-header">
+            <span class="group-title">Groupe</span>
+            <button type="button" class="btn-close" aria-label="Close" onclick="removeGroup('${id}')"></button>
+          </div>
+          
+          <div class="mb-3 suggestions-container">
+            <label class="form-label">Véhicule</label>
+            <input type="text" id="${id}-vehicle" class="form-control" placeholder="Entrez le véhicule...">
+            <div id="${id}-vehicle-suggestions" class="suggestions-list"></div>
+          </div>
+
+          <div class="mb-3 suggestions-container">
+            <label class="form-label">Conducteur</label>
+            <input type="text" id="${id}-driver" class="form-control" placeholder="Rechercher le conducteur...">
+            <input type="hidden" id="${id}-driver-id" class="driver-id-hidden"> 
+            <div id="${id}-driver-suggestions" class="suggestions-list"></div>
+          </div>
+
+          <div class="mb-3 suggestions-container">
+            <label class="form-label">Passagers</label>
+            <input type="text" id="${id}-members" class="form-control" placeholder="Ajouter des passagers...">
+            <div id="${id}-members-suggestions" class="suggestions-list"></div>
+            <div id="${id}-selected-members"></div>
+          </div>
+        </div>
+      `;
+    }
+
+    function addGroup() {
+      const id = generateGroupId();
+      const div = document.createElement('div');
+      div.innerHTML = createGroupHTML(id);
+      groupsContainer.appendChild(div.firstElementChild); // Append the group-card directly
+
+      // Initialize Autocompletes for this group
+
+      // 1. Vehicle (Transport) - Single Select
       new AutocompleteManager({
-        inputId: 'members-input',
-        suggestionsId: 'members-suggestions',
-        selectedContainerId: 'selected-members',
+        inputId: `${id}-vehicle`,
+        suggestionsId: `${id}-vehicle-suggestions`,
+        selectedContainerId: null,
+        isSingleSelect: true,
+        backendMethod: 'getTransportMeans',
+        renderSuggestionInfo: (item) => [`<span>${item}</span>`, item]
+      });
+
+      // 2. Driver - Single Select (Employee)
+      new AutocompleteManager({
+        inputId: `${id}-driver`,
+        suggestionsId: `${id}-driver-suggestions`,
+        selectedContainerId: null,
+        isSingleSelect: true,
         backendMethod: 'getEmployeeNames',
-        renderSuggestionInfo: (item) => {
-          // item: [id, lastname, firstname, rank]
-          const html = `<span class="hidden memberId">${item[0]}</span>${item[1]} ${item[2]}, ${item[3]}`;
-          return [html, item];
+        renderSuggestionInfo: (item) => [`<span>${item[1]} ${item[2]} <small class="text-muted">${item[3]}</small></span>`, item],
+        onSelect: (item) => {
+          // item is [id, first, last, func]
+          document.getElementById(`${id}-driver-id`).value = item[0]; // Store ID
         }
       });
 
-      // 2. Destinations
+      // 3. Passengers (Members) - Multi Select
+      new AutocompleteManager({
+        inputId: `${id}-members`,
+        suggestionsId: `${id}-members-suggestions`,
+        selectedContainerId: `${id}-selected-members`,
+        backendMethod: 'getEmployeeNames',
+        renderSuggestionInfo: (item) => {
+          const html = `<span class="hidden memberId">${item[0]}</span>${item[1]} ${item[2]} <small class="text-muted">${item[3]}</small>`;
+          return [html, item];
+        }
+      });
+    }
+
+    // Expose removeGroup globally so inline onclick works
+    window.removeGroup = function (id) {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    };
+
+    addGroupBtn.addEventListener('click', addGroup);
+
+
+    // --- Main Application Initialization ---
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const feedbackModal = new bootstrap.Modal('#feedbackModal', { keyboard: false });
+      const modalBody = document.querySelector('.modal-body');
+
+      // Initialize Global Autocompletes (Destinations, Budgets)
       new AutocompleteManager({
         inputId: 'destination-autocomplete',
         suggestionsId: 'destination-suggestions',
@@ -459,17 +620,6 @@
         renderSuggestionInfo: (item) => [`<span class="destinationElt">${item}</span>`, item]
       });
 
-      // 3. Transports
-      new AutocompleteManager({
-        inputId: 'transport',
-        suggestionsId: 'transport-suggestions',
-        selectedContainerId: 'selected-transports',
-        backendMethod: 'getTransportMeans',
-        chipPropertyClass: 'transportElt',
-        renderSuggestionInfo: (item) => [`<span class="transportElt">${item}</span>`, item]
-      });
-
-      // 4. Budgets
       new AutocompleteManager({
         inputId: 'budget',
         suggestionsId: 'budget-suggestions',
@@ -479,9 +629,10 @@
         renderSuggestionInfo: (item) => [`<span class="budgetElt">${item}</span>`, item]
       });
 
+      // Add first group by default
+      addGroup();
 
       // --- Event Listeners ---
-
       document.getElementById('mission-form').addEventListener('submit', handleFormSubmit);
       document.getElementById('odm-type').addEventListener('change', handleOdmTypeChange);
       document.getElementById('departure-date').addEventListener('change', validateDates);
@@ -497,34 +648,31 @@
         }
       });
 
-      // --- Handler Functions ---
-
+      // --- Handlers ---
       function handleOdmTypeChange(e) {
+        // Logic remains same
         const referenceField = document.getElementById('reference');
         if (e.target.value === 'individual') {
-          referenceField.placeholder = 'Obligatoire pour les ordres de mission individuels';
+          referenceField.placeholder = 'Obligatoire';
           referenceField.classList.add('required');
         } else {
-          referenceField.placeholder = 'Facultatif pour les ordres de mission collectifs';
+          referenceField.placeholder = 'Facultatif';
           referenceField.classList.remove('required');
         }
       }
 
-      function validateDates() {
+      function validateDates() { /* Same as before logic */
         const departureDate = document.getElementById('departure-date').value;
         const returnDate = document.getElementById('return-date').value;
         const returnDateParent = document.getElementById('return-date').parentNode;
 
-        // Remove existing warning
         const existingWarning = returnDateParent.querySelector('.warning-text');
-        if (existingWarning) {
-          returnDateParent.removeChild(existingWarning);
-        }
+        if (existingWarning) returnDateParent.removeChild(existingWarning);
 
         if (departureDate && returnDate) {
           if (new Date(returnDate) < new Date(departureDate)) {
             const warningDiv = document.createElement('div');
-            warningDiv.textContent = 'La date de retour doit être postérieure à la date de départ';
+            warningDiv.textContent = 'Retour avant départ impossible';
             warningDiv.className = 'warning-text p-2';
             returnDateParent.appendChild(warningDiv);
           }
@@ -533,48 +681,45 @@
 
       function handleFormSubmit(e) {
         e.preventDefault();
-
-        // Clear previous warnings
         document.querySelectorAll('.warning-text').forEach(el => el.remove());
 
         const warningFields = [];
-
-        // 1. Required text fields
+        // Basic required check
         document.querySelectorAll('.required').forEach(elt => {
           if (!elt.value) warningFields.push(elt);
         });
 
-        // 2. Conditional Reference
+        // Group Validation
+        // at least one group? Yes (we auto add one).
+        // Each group must have non-empty passengers if it's the only one?
+        // Let's scrape data first
+        const data = prepareData();
+
+        // Check if no groups or no passengers
+        if (data.groups.length === 0) {
+          alert("Veuillez ajouter au moins un groupe.");
+          return;
+        }
+
+        // Check Reference for Individual
         const odmType = document.getElementById('odm-type').value;
         const referenceField = document.getElementById('reference');
         if (odmType === 'individual' && !referenceField.value) {
           warningFields.push(referenceField);
         }
 
-        // 3. Collections (Chips)
-        // Check if containers have children
-        const collectionIds = ['selected-members', 'selected-destinations', 'selected-transports'];
-        collectionIds.forEach(id => {
-          const container = document.getElementById(id);
-          if (container && !container.hasChildNodes()) {
-            warningFields.push(container);
-          }
-        });
-
-        // Display warnings
         if (warningFields.length > 0) {
           warningFields.forEach(elt => {
-            const parent = elt.parentNode;
-            const warningDiv = document.createElement('div');
-            warningDiv.textContent = WARNING_TEXT;
-            warningDiv.className = 'warning-text p-2';
-            parent.appendChild(warningDiv);
+            const p = elt.parentNode;
+            const d = document.createElement('div');
+            d.textContent = WARNING_TEXT;
+            d.className = 'warning-text p-2';
+            p.appendChild(d);
           });
-          return;
+          return; // Stop
         }
 
-        // Submit Logic
-        const data = prepareData();
+        // Show spinner
         showSpinnerModal(feedbackModal, modalBody);
 
         google.script.run
@@ -584,61 +729,70 @@
       }
 
       function prepareData() {
-        // Helper to extract text content
-        const extract = (selector) => {
-          return [...new Set(Array.from(document.querySelectorAll(selector)).map(el => el.textContent))];
+        const extract = (selector, context = document) => {
+          return [...new Set(Array.from(context.querySelectorAll(selector)).map(el => el.textContent))];
         };
+
+        // Scrape Groups
+        const groupCards = document.querySelectorAll('.group-card');
+        const groups = [];
+        const allMembers = new Set();
+
+        groupCards.forEach(card => {
+          const vehicle = card.querySelector(`[id$="-vehicle"]`).value;
+          const driverName = card.querySelector(`[id$="-driver"]`).value;
+          const driverId = card.querySelector(`[id$="-driver-id"]`).value;
+          const passengerIds = extract('.memberId', card);
+
+          // If driver ID is missing but name isn't (manual type?), might fail. 
+          // Ideally we force selection. For now assuming selection or empty.
+          if (passengerIds.length > 0 || (vehicle && driverName)) {
+            groups.push({
+              vehicle: vehicle,
+              driverId: driverId,
+              driverName: driverName, // Fallback/Display
+              passengers: passengerIds
+            });
+            passengerIds.forEach(p => allMembers.add(p));
+          }
+        });
 
         return {
           reference: document.getElementById('reference').value,
           docName: document.getElementById('doc-name').value,
           odmType: document.getElementById('odm-type').value,
-          destinations: extract('.destinationElt'),
-          members: extract('.memberId'),
+          destinations: extract('.destinationElt'), // Global
           missionObject: document.getElementById('mission-obj').value,
           departureDate: document.getElementById('departure-date').value,
           returnDate: document.getElementById('return-date').value,
-          transportMeans: extract('.transportElt'),
-          budgets: extract('.budgetElt')
+          budgets: extract('.budgetElt'), // Global
+          groups: groups,
+          // Legacy/Compatibility fields if backend needs them simply:
+          members: Array.from(allMembers), // All unique members
+          transportMeans: groups.map(g => g.vehicle).filter(v => v), // All vehicles
+          drivers: groups.map(g => g.driverId).filter(d => d) // All drivers
         };
       }
 
       function showSpinnerModal(modal, body) {
         body.innerHTML = '<div class="d-flex flex-column align-items-center justify-content-center"><div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;"></div><p class="text-muted">Traitement en cours...</p></div>';
         modal.show();
-
-        const btn = document.querySelector('button[type="submit"]');
-        if (btn) {
-          btn.disabled = true;
-          btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Traitement...';
-        }
       }
 
       function submitFeedback(outcome, modal, body) {
-        const btn = document.querySelector('button[type="submit"]');
-        if (btn) {
-          btn.disabled = false;
-          btn.innerHTML = 'Générer les ordres de mission';
-        }
-
-        const feedbackDiv = document.createElement('div');
-        feedbackDiv.className = 'alert mt-3';
-
-        // Success case: outcome is true
+        const div = document.createElement('div');
+        div.className = 'alert mt-3';
         if (outcome === true) {
-          feedbackDiv.classList.add('alert-success');
-          feedbackDiv.innerHTML = '<h5 class="alert-heading">Succès !</h5><p class="mb-0">Votre demande a bien été traitée.</p>';
+          div.classList.add('alert-success');
+          div.innerHTML = '<h5>Succès !</h5>';
+        } else {
+          div.classList.add('alert-danger');
+          div.innerHTML = `<h5>Erreur</h5><p>${outcome?.message || 'Erreur inconnue'}</p>`;
         }
-        // Failure case: outcome is an Error object or false
-        else {
-          feedbackDiv.classList.add('alert-danger');
-          const errorMessage = (outcome && outcome.message) ? outcome.message : 'Une erreur s\'est produite. Veuillez réessayer ou contacter l\'administrateur.';
-          feedbackDiv.innerHTML = `<h5 class="alert-heading">Erreur</h5><p>${errorMessage}</p>`;
-        }
-
         body.innerHTML = '';
-        body.appendChild(feedbackDiv);
+        body.appendChild(div);
       }
+
     });
   </script>
 </body>
